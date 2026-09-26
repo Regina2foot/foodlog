@@ -1,0 +1,22 @@
+{
+  "name": "Foodlog",
+  "short_name": "Foodlog",
+  "description": "Rate restaurants and browse them by Google Maps link, star rating, and price level.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#a84f06",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
