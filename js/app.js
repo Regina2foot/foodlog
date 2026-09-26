@@ -2,10 +2,74 @@ import { createEmptyState, groupByRestaurant, addRating, generateId } from "./st
 import { sortRestaurants } from "./sort.js";
 import { renderRestaurantList, renderStarPicker, renderPricePicker, setStatus } from "./render.js";
 import { getSettings, saveSettings, removeToken, hasCompleteSettings } from "./settings.js";
+import { fetchRatings, saveRatings, fetchCurrentUser, GitHubApiError } from "./api.js";
 
 const state = createEmptyState();
 let sortField = "rating";
 let sortDir = "desc";
+let currentUser = null;
+
+// Applies `mutate` (ratings[] -> ratings[]) and writes the result to the data
+// repo, re-fetching the latest ratings/sha first and retrying once on a 409
+// write conflict (see CLAUDE.md Section 9).
+async function writeWithConflictRetry(mutate, { message, maxAttempts = 2 } = {}) {
+  const { owner, repo, token } = getSettings();
+  let attempt = 0;
+  let lastError;
+
+  while (attempt < maxAttempts) {
+    attempt += 1;
+    const { ratings: latestRatings, sha } = await fetchRatings({ owner, repo, token });
+    const nextRatings = mutate(latestRatings);
+    try {
+      const result = await saveRatings({ owner, repo, token, ratings: nextRatings, sha, message });
+      state.ratings = nextRatings;
+      state.sha = result.sha;
+      return nextRatings;
+    } catch (err) {
+      if (err instanceof GitHubApiError && err.status === 409) {
+        lastError = err;
+        continue; // reload latest state and reapply the mutation
+      }
+      throw err;
+    }
+  }
+  throw lastError;
+}
+
+async function loadRatingsFromRepo() {
+  const { owner, repo, token } = getSettings();
+  setStatus(els.statusMessage, "Loading ratings…");
+  try {
+    const { ratings, sha } = await fetchRatings({ owner, repo, token });
+    state.ratings = ratings;
+    state.sha = sha;
+    refreshList();
+    setStatus(els.statusMessage, `Loaded ${ratings.length} visit(s).`);
+  } catch (err) {
+    setStatus(els.statusMessage, describeError(err, "Failed to load ratings"), true);
+  }
+}
+
+async function resolveCurrentUser() {
+  const { token } = getSettings();
+  if (!token) {
+    currentUser = null;
+    return;
+  }
+  try {
+    currentUser = await fetchCurrentUser(token);
+  } catch {
+    currentUser = null;
+  }
+}
+
+function describeError(err, prefix) {
+  if (err instanceof GitHubApiError) {
+    return `${prefix}: ${err.message}`;
+  }
+  return `${prefix}: ${err.message || "unknown error"}`;
+}
 
 const els = {
   statusMessage: document.getElementById("status-message"),
@@ -55,7 +119,7 @@ function initSettingsPanel() {
     els.settingsPanel.hidden = !els.settingsPanel.hidden;
   });
 
-  els.settingsForm.addEventListener("submit", (e) => {
+  els.settingsForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     saveSettings({
       owner: els.ownerInput.value.trim(),
@@ -64,6 +128,10 @@ function initSettingsPanel() {
     });
     els.tokenInput.value = "";
     updateSettingsStatus();
+    await resolveCurrentUser();
+    if (hasCompleteSettings()) {
+      await loadRatingsFromRepo();
+    }
   });
 
   els.removeTokenButton.addEventListener("click", () => {
@@ -82,8 +150,13 @@ function updateSettingsStatus() {
 }
 
 function initRatingForm() {
-  els.ratingForm.addEventListener("submit", (e) => {
+  els.ratingForm.addEventListener("submit", async (e) => {
     e.preventDefault();
+
+    if (!hasCompleteSettings()) {
+      setStatus(els.statusMessage, "Set your data repo and token in Settings before adding a rating.", true);
+      return;
+    }
 
     const rating = {
       id: generateId(),
@@ -97,17 +170,24 @@ function initRatingForm() {
         .map((t) => t.trim())
         .filter(Boolean),
       visited_at: els.visitedAtInput.value || new Date().toISOString().slice(0, 10),
-      created_by: "unknown", // replaced with the real GitHub username once API sync is wired up
+      created_by: currentUser || "unknown",
       created_at: new Date().toISOString(),
     };
 
-    state.ratings = addRating(state.ratings, rating);
-    refreshList();
-    els.ratingForm.reset();
-    els.ratingPicker.dataset.value = "0";
-    els.pricePicker.dataset.value = "0";
-    initPickers();
-    setStatus(els.statusMessage, "Rating added locally (not yet saved to the data repo).");
+    setStatus(els.statusMessage, "Saving rating…");
+    try {
+      await writeWithConflictRetry((latestRatings) => addRating(latestRatings, rating), {
+        message: `Add rating for ${rating.name || "restaurant"}`,
+      });
+      refreshList();
+      els.ratingForm.reset();
+      els.ratingPicker.dataset.value = "0";
+      els.pricePicker.dataset.value = "0";
+      initPickers();
+      setStatus(els.statusMessage, "Rating saved.");
+    } catch (err) {
+      setStatus(els.statusMessage, describeError(err, "Failed to save rating"), true);
+    }
   });
 }
 
@@ -127,14 +207,18 @@ function initSortControls() {
 
 function initToolbar() {
   els.refreshButton.addEventListener("click", () => {
-    setStatus(els.statusMessage, "Data repo sync isn't wired up yet.");
+    if (!hasCompleteSettings()) {
+      setStatus(els.statusMessage, "Set your data repo and token in Settings first.", true);
+      return;
+    }
+    loadRatingsFromRepo();
   });
   els.exportButton.addEventListener("click", () => {
     setStatus(els.statusMessage, "CSV export isn't wired up yet.");
   });
 }
 
-function init() {
+async function init() {
   initPickers();
   initSettingsPanel();
   initRatingForm();
@@ -143,7 +227,10 @@ function init() {
   refreshList();
   if (!hasCompleteSettings()) {
     setStatus(els.statusMessage, "Set your data repo and token in Settings to sync ratings.");
+    return;
   }
+  await resolveCurrentUser();
+  await loadRatingsFromRepo();
 }
 
 init();
