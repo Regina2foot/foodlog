@@ -1,13 +1,17 @@
-import { createEmptyState, groupByRestaurant, addRating, generateId } from "./state.js";
+import { createEmptyState, groupByRestaurant, addRating, updateRating, removeRating, generateId } from "./state.js";
 import { sortRestaurants } from "./sort.js";
 import { renderRestaurantList, renderStarPicker, renderPricePicker, setStatus } from "./render.js";
 import { getSettings, saveSettings, removeToken, hasCompleteSettings } from "./settings.js";
 import { fetchRatings, saveRatings, fetchCurrentUser, GitHubApiError } from "./api.js";
+import { renderRestaurantDetail } from "./history.js";
+import { openMapsUrl } from "./maps.js";
 
 const state = createEmptyState();
 let sortField = "rating";
 let sortDir = "desc";
 let currentUser = null;
+let detailUrl = null; // google_maps_url of the restaurant currently shown in detail view
+let editingVisitId = null;
 
 // Applies `mutate` (ratings[] -> ratings[]) and writes the result to the data
 // repo, re-fetching the latest ratings/sha first and retrying once on a 409
@@ -45,6 +49,7 @@ async function loadRatingsFromRepo() {
     state.ratings = ratings;
     state.sha = sha;
     refreshList();
+    if (detailUrl) refreshDetail();
     setStatus(els.statusMessage, `Loaded ${ratings.length} visit(s).`);
   } catch (err) {
     setStatus(els.statusMessage, describeError(err, "Failed to load ratings"), true);
@@ -94,14 +99,97 @@ const els = {
   commentInput: document.getElementById("field-comment"),
   tagsInput: document.getElementById("field-tags"),
   visitedAtInput: document.getElementById("field-visited-at"),
+  listPanel: document.getElementById("list-panel"),
+  formPanel: document.getElementById("form-panel"),
+  detailPanel: document.getElementById("detail-panel"),
+  detailContent: document.getElementById("detail-content"),
+  backToListButton: document.getElementById("btn-back-to-list"),
 };
 
 function refreshList() {
   const restaurants = groupByRestaurant(state.ratings);
   const sorted = sortRestaurants(restaurants, sortField, sortDir);
-  renderRestaurantList(els.restaurantListBody, sorted, () => {
-    // Detail view is added in a later milestone.
-  });
+  renderRestaurantList(els.restaurantListBody, sorted, (url) => showDetail(url));
+}
+
+function findRestaurant(url) {
+  return groupByRestaurant(state.ratings).find((r) => r.google_maps_url === url) || null;
+}
+
+function refreshDetail() {
+  const restaurant = findRestaurant(detailUrl);
+  if (!restaurant) {
+    showList();
+    return;
+  }
+  renderRestaurantDetail(
+    els.detailContent,
+    restaurant,
+    {
+      onOpenMaps: (url) => {
+        try {
+          openMapsUrl(url);
+        } catch (err) {
+          setStatus(els.statusMessage, err.message, true);
+        }
+      },
+      onEdit: (id) => {
+        editingVisitId = id;
+        refreshDetail();
+      },
+      onCancelEdit: () => {
+        editingVisitId = null;
+        refreshDetail();
+      },
+      onSaveEdit: async (id, changes) => {
+        try {
+          await writeWithConflictRetry((latestRatings) => updateRating(latestRatings, id, changes), {
+            message: "Edit rating",
+          });
+          editingVisitId = null;
+          refreshDetail();
+          refreshList();
+          setStatus(els.statusMessage, "Visit updated.");
+        } catch (err) {
+          setStatus(els.statusMessage, describeError(err, "Failed to save edit"), true);
+        }
+      },
+      onDelete: async (id) => {
+        try {
+          await writeWithConflictRetry((latestRatings) => removeRating(latestRatings, id), {
+            message: "Delete rating",
+          });
+          refreshDetail();
+          refreshList();
+          setStatus(els.statusMessage, "Visit deleted.");
+        } catch (err) {
+          setStatus(els.statusMessage, describeError(err, "Failed to delete visit"), true);
+        }
+      },
+    },
+    editingVisitId
+  );
+}
+
+function showDetail(url) {
+  detailUrl = url;
+  editingVisitId = null;
+  els.listPanel.hidden = true;
+  els.formPanel.hidden = true;
+  els.detailPanel.hidden = false;
+  refreshDetail();
+}
+
+function showList() {
+  detailUrl = null;
+  editingVisitId = null;
+  els.detailPanel.hidden = true;
+  els.listPanel.hidden = false;
+  els.formPanel.hidden = false;
+}
+
+function initDetailView() {
+  els.backToListButton.addEventListener("click", showList);
 }
 
 function initPickers() {
@@ -224,6 +312,7 @@ async function init() {
   initRatingForm();
   initSortControls();
   initToolbar();
+  initDetailView();
   refreshList();
   if (!hasCompleteSettings()) {
     setStatus(els.statusMessage, "Set your data repo and token in Settings to sync ratings.");
