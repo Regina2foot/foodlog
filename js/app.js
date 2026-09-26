@@ -4,7 +4,7 @@ import { renderRestaurantList, renderStarPicker, renderPricePicker, setStatus } 
 import { getSettings, saveSettings, removeToken, hasCompleteSettings } from "./settings.js";
 import { fetchRatings, saveRatings, fetchCurrentUser, GitHubApiError } from "./api.js";
 import { renderRestaurantDetail } from "./history.js";
-import { openMapsUrl } from "./maps.js";
+import { openMapsUrl, extractNameFromMapsUrl } from "./maps.js";
 import { ratingsToCsv, downloadCsv } from "./csv.js";
 
 const state = createEmptyState();
@@ -201,6 +201,16 @@ function initDetailView() {
   els.backToListButton.addEventListener("click", showList);
 }
 
+function initMapsNamePrefill() {
+  els.mapsUrlInput.addEventListener("input", () => {
+    if (els.nameInput.value.trim() !== "") return; // never overwrite a typed name
+    const extracted = extractNameFromMapsUrl(els.mapsUrlInput.value.trim());
+    if (extracted) {
+      els.nameInput.value = extracted;
+    }
+  });
+}
+
 function initPickers() {
   renderStarPicker(els.ratingPicker, () => {});
   renderPricePicker(els.pricePicker, () => {});
@@ -323,6 +333,7 @@ function initToolbar() {
 async function init() {
   initPickers();
   initSettingsPanel();
+  initMapsNamePrefill();
   initRatingForm();
   initSortControls();
   initToolbar();
