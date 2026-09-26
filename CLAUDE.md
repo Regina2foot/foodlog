@@ -52,9 +52,21 @@ When in doubt: choose the more cautious option and ask if unclear.
 
 Development should be traceable via Git/GitHub. So: after finishing each
 milestone from Section 14 (or any self-contained, working intermediate
-step), make a commit with a meaningful message and push it. Don't commit
-in the middle of a half-finished state. The commit message rules from
-Section 3.2 (no personal/real data in the message) still apply.
+step), make a commit with a meaningful message. Don't commit in the middle
+of a half-finished state. The commit message rules from Section 3.2 (no
+personal/real data in the message) still apply.
+
+**Always ask for explicit permission before every push, with no
+exceptions** — commits can stay local until then. This applies every
+single time, not just the first push or when something seems risky.
+
+### 2.4 Manual testing
+
+When a change would benefit from being tried out in a real browser (any
+UI change, or anything where automated checks can't confirm the feature
+actually works) — stop and ask me to test it manually, rather than just
+asserting it works. Say what to check and interrupt for my confirmation
+before considering the step done.
 
 ## 3. Privacy principles
 
@@ -380,7 +392,7 @@ pick (Section 2.1).
 
 ## 14. Workflow for Claude Code
 
-After each completed step: commit and push (see Section 2.3).
+After each completed step: commit, then ask before pushing (see Section 2.3).
 
 1. Whenever something is unclear, Section 2.1 applies: ask first, don't
    guess — this covers things like unclear repo names, GitHub username,
