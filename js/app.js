@@ -5,6 +5,7 @@ import { getSettings, saveSettings, removeToken, hasCompleteSettings } from "./s
 import { fetchRatings, saveRatings, fetchCurrentUser, GitHubApiError } from "./api.js";
 import { renderRestaurantDetail } from "./history.js";
 import { openMapsUrl } from "./maps.js";
+import { ratingsToCsv, downloadCsv } from "./csv.js";
 
 const state = createEmptyState();
 let sortField = "rating";
@@ -302,7 +303,12 @@ function initToolbar() {
     loadRatingsFromRepo();
   });
   els.exportButton.addEventListener("click", () => {
-    setStatus(els.statusMessage, "CSV export isn't wired up yet.");
+    if (state.ratings.length === 0) {
+      setStatus(els.statusMessage, "No ratings to export yet.", true);
+      return;
+    }
+    downloadCsv(ratingsToCsv(state.ratings));
+    setStatus(els.statusMessage, `Exported ${state.ratings.length} visit(s) as CSV.`);
   });
 }
 
