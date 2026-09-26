@@ -3,7 +3,7 @@
 // "Open in Google Maps" action. All user-supplied text is set via
 // textContent, never innerHTML (see CLAUDE.md Section 4.1).
 
-import { formatStars, formatPrice, renderStarPicker, renderPricePicker } from "./render.js";
+import { buildStarsDisplay, formatPrice, renderStarPicker, renderPricePicker } from "./render.js";
 import { isSafeHttpUrl } from "./maps.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -91,8 +91,9 @@ export function buildHistoryChart(visits) {
 function renderVisitRow(visit, { onEdit, onDelete }) {
   const row = el("tr");
   const dateCell = el("td", { textContent: visit.visited_at || "" });
-  const ratingCell = el("td", { textContent: formatStars(visit.rating) });
-  const priceCell = el("td", { textContent: formatPrice(visit.price_level) });
+  const ratingCell = el("td");
+  ratingCell.appendChild(buildStarsDisplay(visit.rating));
+  const priceCell = el("td", { textContent: visit.status === "wishlist" ? "" : formatPrice(visit.price_level) });
   const commentCell = el("td", { textContent: visit.comment || "" });
   const tagsCell = el("td", { textContent: (visit.tags || []).join(", ") });
 
@@ -114,6 +115,10 @@ function renderVisitEditForm(visit, { onSave, onCancel }) {
   const row = el("tr");
   const cell = el("td", { colSpan: 6 });
 
+  const wishlistLabel = el("label", { className: "checkbox-label" });
+  const wishlistCheckbox = el("input", { type: "checkbox", checked: visit.status === "wishlist" });
+  wishlistLabel.append(wishlistCheckbox, document.createTextNode("Wishlist (not yet visited)"));
+
   const ratingPicker = el("span", { className: "star-picker" });
   ratingPicker.dataset.value = String(visit.rating ?? 0);
   const pricePicker = el("span", { className: "price-picker" });
@@ -129,28 +134,34 @@ function renderVisitEditForm(visit, { onSave, onCancel }) {
   });
   const dateInput = el("input", { type: "date", value: visit.visited_at || "" });
 
+  const visitedFields = el("div", { className: "form-actions", hidden: visit.status === "wishlist" }, [
+    ratingPicker,
+    pricePicker,
+    commentInput,
+    dateInput,
+  ]);
+
+  wishlistCheckbox.addEventListener("change", () => {
+    visitedFields.hidden = wishlistCheckbox.checked;
+  });
+
   const saveButton = el("button", { type: "button", textContent: "Save" });
   saveButton.addEventListener("click", () => {
+    const isWishlist = wishlistCheckbox.checked;
     onSave(visit.id, {
-      rating: Number(ratingPicker.dataset.value || 0),
-      price_level: Number(pricePicker.dataset.value || 0),
-      comment: commentInput.value.trim(),
+      status: isWishlist ? "wishlist" : "visited",
+      rating: isWishlist ? null : Number(ratingPicker.dataset.value || 0),
+      price_level: isWishlist ? null : Number(pricePicker.dataset.value || 0),
+      comment: isWishlist ? "" : commentInput.value.trim(),
       tags: tagsInput.value.split(",").map((t) => t.trim()).filter(Boolean),
-      visited_at: dateInput.value || visit.visited_at,
+      visited_at: isWishlist ? null : dateInput.value || visit.visited_at,
     });
   });
   const cancelButton = el("button", { type: "button", textContent: "Cancel" });
   cancelButton.addEventListener("click", onCancel);
 
-  const form = el("div", { className: "form-actions" }, [
-    ratingPicker,
-    pricePicker,
-    commentInput,
-    tagsInput,
-    dateInput,
-    saveButton,
-    cancelButton,
-  ]);
+  const buttons = el("div", { className: "form-actions" }, [saveButton, cancelButton]);
+  const form = el("div", {}, [wishlistLabel, tagsInput, visitedFields, buttons]);
   cell.appendChild(form);
   row.appendChild(cell);
   return row;

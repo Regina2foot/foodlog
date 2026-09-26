@@ -3,6 +3,8 @@
   --border: #ccc;
   --accent: #d4820a;
   --bg-panel: rgba(127, 127, 127, 0.06);
+  --star-filled: #ffb400;
+  --star-empty: #d8d8d8;
 }
 
 * {
@@ -96,14 +98,39 @@ form select {
   user-select: none;
 }
 
-.star-picker .symbol,
+.star-picker .symbol {
+  color: var(--star-empty);
+}
+
 .price-picker .symbol {
   opacity: 0.3;
 }
 
-.star-picker .symbol.active,
+.star-picker .symbol.active {
+  color: var(--star-filled);
+}
+
 .price-picker .symbol.active {
   opacity: 1;
+}
+
+.stars-display {
+  display: inline-block;
+  letter-spacing: 1px;
+}
+
+.star-display-symbol.filled {
+  color: var(--star-filled);
+}
+
+.star-display-symbol.empty {
+  color: var(--star-empty);
+}
+
+.stars-display-empty-state {
+  font-size: 0.85rem;
+  font-style: italic;
+  opacity: 0.7;
 }
 
 .list-header {
@@ -118,6 +145,31 @@ form select {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+.view-toggle {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.toggle-btn {
+  opacity: 0.6;
+}
+
+.toggle-btn.active {
+  opacity: 1;
+  font-weight: 600;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: normal;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: auto;
 }
 
 .sort-controls label {

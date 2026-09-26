@@ -7,14 +7,24 @@ export function createEmptyState() {
   };
 }
 
-// Groups visits into restaurants by exact google_maps_url match (see CLAUDE.md
-// Section 8/13). Each restaurant carries all its visits, newest first, plus a
-// convenience "latest" pointer used for the list view and for sorting.
+// The Google Maps link is optional (Section 9). When present it's the
+// grouping key for repeat visits (Section 8); when absent, each visit is
+// its own group (visit.id) since there's no reliable way to know two
+// link-less entries are the same place. `groupKey` is used everywhere
+// internally to identify a restaurant/group; `google_maps_url` on the
+// returned restaurant stays the real (possibly empty) value for display.
+function groupKeyFor(visit) {
+  return visit.google_maps_url || `__no-url-${visit.id}`;
+}
+
+// Groups visits into restaurants (see CLAUDE.md Section 8/13). Each
+// restaurant carries all its visits, newest first, plus a convenience
+// "latest" pointer used for the list view and for sorting.
 export function groupByRestaurant(ratings) {
   const groups = new Map();
 
   for (const visit of ratings) {
-    const key = visit.google_maps_url;
+    const key = groupKeyFor(visit);
     if (!groups.has(key)) {
       groups.set(key, []);
     }
@@ -22,12 +32,13 @@ export function groupByRestaurant(ratings) {
   }
 
   const restaurants = [];
-  for (const [googleMapsUrl, visits] of groups) {
+  for (const [key, visits] of groups) {
     const sortedVisits = [...visits].sort((a, b) =>
       (b.visited_at || "").localeCompare(a.visited_at || "")
     );
     restaurants.push({
-      google_maps_url: googleMapsUrl,
+      groupKey: key,
+      google_maps_url: sortedVisits[0].google_maps_url,
       name: sortedVisits[0].name,
       latest: sortedVisits[0],
       visits: sortedVisits,

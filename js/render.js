@@ -4,9 +4,30 @@
 const STAR_SYMBOL = "★";
 const PRICE_SYMBOL = "€";
 
-export function formatStars(rating) {
-  const n = Math.max(0, Math.min(5, Math.round(rating ?? 0)));
-  return STAR_SYMBOL.repeat(n) || "–";
+// Always renders all 5 stars: `rating` of them filled (bright yellow), the
+// rest empty (gray outline) — so a real 0-star rating is visibly distinct
+// from "not rated at all" (rating === null/undefined, e.g. a wishlist entry
+// that hasn't been visited yet), which renders as plain text instead.
+export function buildStarsDisplay(rating) {
+  const container = document.createElement("span");
+  container.className = "stars-display";
+
+  if (rating === null || rating === undefined) {
+    container.classList.add("stars-display-empty-state");
+    container.textContent = "Not yet visited";
+    return container;
+  }
+
+  const filled = Math.max(0, Math.min(5, Math.round(rating)));
+  container.setAttribute("role", "img");
+  container.setAttribute("aria-label", `${filled} out of 5 stars`);
+  for (let i = 1; i <= 5; i++) {
+    const star = document.createElement("span");
+    star.className = "star-display-symbol " + (i <= filled ? "filled" : "empty");
+    star.textContent = STAR_SYMBOL;
+    container.appendChild(star);
+  }
+  return container;
 }
 
 export function formatPrice(level) {
@@ -55,16 +76,33 @@ export function renderPricePicker(container, onChange) {
   }
 }
 
+const VISITED_COLUMNS = ["Name", "Rating", "Price", "Last comment", "Last visit"];
+const WISHLIST_COLUMNS = ["Name", "Tags", "Added"];
+
+// Rewrites the table header row for the current list view mode.
+export function renderListHeader(headerRow, mode = "visited") {
+  headerRow.textContent = "";
+  const columns = mode === "wishlist" ? WISHLIST_COLUMNS : VISITED_COLUMNS;
+  for (const col of columns) {
+    const th = document.createElement("th");
+    th.textContent = col;
+    headerRow.appendChild(th);
+  }
+}
+
 // Renders the grouped restaurant list into `tbody`. `onRowClick` receives the
-// restaurant's google_maps_url so the caller can open the detail view.
-export function renderRestaurantList(tbody, restaurants, onRowClick) {
+// restaurant's groupKey so the caller can open the detail view (the Google
+// Maps link is optional, so groupKey — not google_maps_url — is what
+// uniquely identifies a restaurant/group; see state.js).
+// `mode` ("visited" | "wishlist") selects which columns to show.
+export function renderRestaurantList(tbody, restaurants, onRowClick, mode = "visited") {
   tbody.textContent = "";
 
   if (restaurants.length === 0) {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
-    cell.colSpan = 5;
-    cell.textContent = "No ratings yet.";
+    cell.colSpan = mode === "wishlist" ? WISHLIST_COLUMNS.length : VISITED_COLUMNS.length;
+    cell.textContent = mode === "wishlist" ? "Wishlist is empty." : "No ratings yet.";
     row.appendChild(cell);
     tbody.appendChild(row);
     return;
@@ -76,25 +114,37 @@ export function renderRestaurantList(tbody, restaurants, onRowClick) {
 
     const nameCell = document.createElement("td");
     nameCell.textContent = restaurant.name;
+    row.appendChild(nameCell);
 
-    const ratingCell = document.createElement("td");
-    ratingCell.textContent = formatStars(restaurant.latest.rating);
+    if (mode === "wishlist") {
+      const tagsCell = document.createElement("td");
+      tagsCell.textContent = (restaurant.latest.tags || []).join(", ");
 
-    const priceCell = document.createElement("td");
-    priceCell.textContent = formatPrice(restaurant.latest.price_level);
+      const addedCell = document.createElement("td");
+      addedCell.textContent = (restaurant.latest.created_at || "").slice(0, 10);
 
-    const commentCell = document.createElement("td");
-    commentCell.textContent = restaurant.latest.comment || "";
+      row.append(tagsCell, addedCell);
+    } else {
+      const ratingCell = document.createElement("td");
+      ratingCell.appendChild(buildStarsDisplay(restaurant.latest.rating));
 
-    const dateCell = document.createElement("td");
-    dateCell.textContent = restaurant.latest.visited_at || "";
+      const priceCell = document.createElement("td");
+      priceCell.textContent = formatPrice(restaurant.latest.price_level);
 
-    row.append(nameCell, ratingCell, priceCell, commentCell, dateCell);
-    row.addEventListener("click", () => onRowClick(restaurant.google_maps_url));
+      const commentCell = document.createElement("td");
+      commentCell.textContent = restaurant.latest.comment || "";
+
+      const dateCell = document.createElement("td");
+      dateCell.textContent = restaurant.latest.visited_at || "";
+
+      row.append(ratingCell, priceCell, commentCell, dateCell);
+    }
+
+    row.addEventListener("click", () => onRowClick(restaurant.groupKey));
     row.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
-        onRowClick(restaurant.google_maps_url);
+        onRowClick(restaurant.groupKey);
       }
     });
     tbody.appendChild(row);

@@ -1,6 +1,6 @@
 import { createEmptyState, groupByRestaurant, addRating, updateRating, removeRating, generateId } from "./state.js";
 import { sortRestaurants } from "./sort.js";
-import { renderRestaurantList, renderStarPicker, renderPricePicker, setStatus } from "./render.js";
+import { renderRestaurantList, renderListHeader, renderStarPicker, renderPricePicker, setStatus } from "./render.js";
 import { getSettings, saveSettings, removeToken, hasCompleteSettings } from "./settings.js";
 import { fetchRatings, saveRatings, fetchCurrentUser, GitHubApiError } from "./api.js";
 import { renderRestaurantDetail } from "./history.js";
@@ -11,8 +11,9 @@ const state = createEmptyState();
 let sortField = "rating";
 let sortDir = "desc";
 let currentUser = null;
-let detailUrl = null; // google_maps_url of the restaurant currently shown in detail view
+let detailGroupKey = null; // groupKey of the restaurant currently shown in detail view
 let editingVisitId = null;
+let listView = "visited"; // "visited" | "wishlist"
 
 // Applies `mutate` (ratings[] -> ratings[]) and writes the result to the data
 // repo, re-fetching the latest ratings/sha first and retrying once on a 409
@@ -50,7 +51,7 @@ async function loadRatingsFromRepo() {
     state.ratings = ratings;
     state.sha = sha;
     refreshList();
-    if (detailUrl) refreshDetail();
+    if (detailGroupKey) refreshDetail();
     if (notFound) {
       setStatus(
         els.statusMessage,
@@ -113,20 +114,35 @@ const els = {
   detailPanel: document.getElementById("detail-panel"),
   detailContent: document.getElementById("detail-content"),
   backToListButton: document.getElementById("btn-back-to-list"),
+  wishlistCheckbox: document.getElementById("field-wishlist"),
+  visitedFieldsContainer: document.getElementById("visited-fields"),
+  viewVisitedButton: document.getElementById("btn-view-visited"),
+  viewWishlistButton: document.getElementById("btn-view-wishlist"),
+  sortControls: document.getElementById("sort-controls"),
+  restaurantTableHeaderRow: document.getElementById("restaurant-table-header-row"),
 };
 
 function refreshList() {
-  const restaurants = groupByRestaurant(state.ratings);
-  const sorted = sortRestaurants(restaurants, sortField, sortDir);
-  renderRestaurantList(els.restaurantListBody, sorted, (url) => showDetail(url));
+  const filtered = state.ratings.filter((r) => {
+    const status = r.status || "visited";
+    return listView === "wishlist" ? status === "wishlist" : status !== "wishlist";
+  });
+  const restaurants = groupByRestaurant(filtered);
+  const sorted =
+    listView === "wishlist"
+      ? sortRestaurants(restaurants, "name", "asc")
+      : sortRestaurants(restaurants, sortField, sortDir);
+  renderListHeader(els.restaurantTableHeaderRow, listView);
+  renderRestaurantList(els.restaurantListBody, sorted, (key) => showDetail(key), listView);
+  els.sortControls.hidden = listView === "wishlist";
 }
 
-function findRestaurant(url) {
-  return groupByRestaurant(state.ratings).find((r) => r.google_maps_url === url) || null;
+function findRestaurant(groupKey) {
+  return groupByRestaurant(state.ratings).find((r) => r.groupKey === groupKey) || null;
 }
 
 function refreshDetail() {
-  const restaurant = findRestaurant(detailUrl);
+  const restaurant = findRestaurant(detailGroupKey);
   if (!restaurant) {
     showList();
     return;
@@ -180,8 +196,8 @@ function refreshDetail() {
   );
 }
 
-function showDetail(url) {
-  detailUrl = url;
+function showDetail(groupKey) {
+  detailGroupKey = groupKey;
   editingVisitId = null;
   els.listPanel.hidden = true;
   els.formPanel.hidden = true;
@@ -190,7 +206,7 @@ function showDetail(url) {
 }
 
 function showList() {
-  detailUrl = null;
+  detailGroupKey = null;
   editingVisitId = null;
   els.detailPanel.hidden = true;
   els.listPanel.hidden = false;
@@ -199,6 +215,25 @@ function showList() {
 
 function initDetailView() {
   els.backToListButton.addEventListener("click", showList);
+}
+
+function initViewToggle() {
+  function setView(view) {
+    listView = view;
+    els.viewVisitedButton.classList.toggle("active", view === "visited");
+    els.viewVisitedButton.setAttribute("aria-pressed", String(view === "visited"));
+    els.viewWishlistButton.classList.toggle("active", view === "wishlist");
+    els.viewWishlistButton.setAttribute("aria-pressed", String(view === "wishlist"));
+    refreshList();
+  }
+  els.viewVisitedButton.addEventListener("click", () => setView("visited"));
+  els.viewWishlistButton.addEventListener("click", () => setView("wishlist"));
+}
+
+function initWishlistToggle() {
+  els.wishlistCheckbox.addEventListener("change", () => {
+    els.visitedFieldsContainer.hidden = els.wishlistCheckbox.checked;
+  });
 }
 
 function initMapsNamePrefill() {
@@ -265,33 +300,36 @@ function initRatingForm() {
       return;
     }
 
+    const isWishlist = els.wishlistCheckbox.checked;
     const rating = {
       id: generateId(),
       name: els.nameInput.value.trim(),
       google_maps_url: els.mapsUrlInput.value.trim(),
-      rating: Number(els.ratingPicker.dataset.value || 0),
-      price_level: Number(els.pricePicker.dataset.value || 0),
-      comment: els.commentInput.value.trim(),
+      status: isWishlist ? "wishlist" : "visited",
+      rating: isWishlist ? null : Number(els.ratingPicker.dataset.value || 0),
+      price_level: isWishlist ? null : Number(els.pricePicker.dataset.value || 0),
+      comment: isWishlist ? "" : els.commentInput.value.trim(),
       tags: els.tagsInput.value
         .split(",")
         .map((t) => t.trim())
         .filter(Boolean),
-      visited_at: els.visitedAtInput.value || new Date().toISOString().slice(0, 10),
+      visited_at: isWishlist ? null : els.visitedAtInput.value || new Date().toISOString().slice(0, 10),
       created_by: currentUser || "unknown",
       created_at: new Date().toISOString(),
     };
 
-    setStatus(els.statusMessage, "Saving rating…");
+    setStatus(els.statusMessage, isWishlist ? "Saving to wishlist…" : "Saving rating…");
     try {
       await writeWithConflictRetry((latestRatings) => addRating(latestRatings, rating), {
-        message: `Add rating for ${rating.name || "restaurant"}`,
+        message: isWishlist ? `Add ${rating.name || "restaurant"} to wishlist` : `Add rating for ${rating.name || "restaurant"}`,
       });
       refreshList();
       els.ratingForm.reset();
       els.ratingPicker.dataset.value = "0";
       els.pricePicker.dataset.value = "0";
+      els.visitedFieldsContainer.hidden = false;
       initPickers();
-      setStatus(els.statusMessage, "Rating saved.");
+      setStatus(els.statusMessage, isWishlist ? "Added to wishlist." : "Rating saved.");
     } catch (err) {
       setStatus(els.statusMessage, describeError(err, "Failed to save rating"), true);
     }
@@ -334,10 +372,12 @@ async function init() {
   initPickers();
   initSettingsPanel();
   initMapsNamePrefill();
+  initWishlistToggle();
   initRatingForm();
   initSortControls();
   initToolbar();
   initDetailView();
+  initViewToggle();
   refreshList();
   if (!hasCompleteSettings()) {
     setStatus(els.statusMessage, "Set your data repo and token in Settings to sync ratings.");

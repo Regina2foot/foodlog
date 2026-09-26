@@ -4,6 +4,7 @@
 const COLUMNS = [
   "name",
   "google_maps_url",
+  "status",
   "rating",
   "price_level",
   "comment",
@@ -25,7 +26,12 @@ export function ratingsToCsv(ratings) {
   const header = COLUMNS.join(",");
   const rows = ratings.map((visit) =>
     COLUMNS.map((col) => {
-      const value = col === "tags" ? (visit.tags || []).join("; ") : visit[col];
+      const value =
+        col === "tags"
+          ? (visit.tags || []).join("; ")
+          : col === "status"
+            ? visit.status || "visited"
+            : visit[col];
       return escapeCsvField(value);
     }).join(",")
   );
