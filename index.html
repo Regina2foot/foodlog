@@ -22,14 +22,19 @@
     These values are stored only in this browser (localStorage) and are never
     sent anywhere except to the GitHub API for the data repo you configure below.
   </p>
+  <p class="hint">
+    Owner and repo name must exactly match your data repo's GitHub URL
+    (<code>github.com/&lt;owner&gt;/&lt;repo&gt;</code>) — not a nickname or
+    display name. Use the identical values on every device.
+  </p>
   <form id="settings-form">
     <label>
-      Data repo owner
-      <input type="text" id="setting-owner" autocomplete="off" placeholder="e.g. your-github-username" />
+      Data repo owner (exact GitHub username or org)
+      <input type="text" id="setting-owner" autocomplete="off" placeholder="exact GitHub username/org from the repo URL" />
     </label>
     <label>
-      Data repo name
-      <input type="text" id="setting-repo" autocomplete="off" placeholder="e.g. foodlog-data" />
+      Data repo name (exact GitHub repository name)
+      <input type="text" id="setting-repo" autocomplete="off" placeholder="exact repo name from the repo URL" />
     </label>
     <label>
       Personal access token

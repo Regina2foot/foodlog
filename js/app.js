@@ -46,12 +46,20 @@ async function loadRatingsFromRepo() {
   const { owner, repo, token } = getSettings();
   setStatus(els.statusMessage, "Loading ratings…");
   try {
-    const { ratings, sha } = await fetchRatings({ owner, repo, token });
+    const { ratings, sha, notFound } = await fetchRatings({ owner, repo, token });
     state.ratings = ratings;
     state.sha = sha;
     refreshList();
     if (detailUrl) refreshDetail();
-    setStatus(els.statusMessage, `Loaded ${ratings.length} visit(s).`);
+    if (notFound) {
+      setStatus(
+        els.statusMessage,
+        `No ratings.json found at ${owner}/${repo}. Double-check the exact owner/repo spelling in Settings and that your token has access — this is not the same as a confirmed-empty list.`,
+        true
+      );
+    } else {
+      setStatus(els.statusMessage, `Loaded ${ratings.length} visit(s).`);
+    }
   } catch (err) {
     setStatus(els.statusMessage, describeError(err, "Failed to load ratings"), true);
   }

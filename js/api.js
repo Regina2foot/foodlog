@@ -61,7 +61,11 @@ export async function fetchRatings({ owner, repo, token }) {
   );
 
   if (response.status === 404) {
-    return { ratings: [], sha: null };
+    // Could mean a genuinely new/empty data repo, but far more often means
+    // owner/repo doesn't exist or isn't accessible to this token (e.g. a
+    // typo). Callers should surface `notFound` rather than treat this the
+    // same as a confirmed-empty ratings list.
+    return { ratings: [], sha: null, notFound: true };
   }
   if (!response.ok) {
     throw new GitHubApiError(`Failed to read ratings.json (status ${response.status})`, response.status);
