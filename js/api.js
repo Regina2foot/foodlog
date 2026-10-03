@@ -33,7 +33,7 @@ async function request(url, options) {
     response = await fetch(url, options);
   } catch (err) {
     throw new GitHubApiError(
-      `Network error calling GitHub API (${redactHeaders(options.headers)}): ${err.message}`,
+      `Network error calling GitHub API (headers: ${JSON.stringify(redactHeaders(options.headers))}): ${err.message || err}`,
       0
     );
   }
