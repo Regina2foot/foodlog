@@ -372,7 +372,9 @@ pick (Section 2.1).
       Note field is parsed for a leading `N/10` rating, converted to 0–5
       stars as 0–5/10 → 0 stars, then 6/10 → 1 star up to 10/10 → 5 stars
       (not a halving scale) — if found, it imports as a rated visit;
-      otherwise as a wishlist entry. Duplicate `google_maps_url`s already
+      otherwise as a wishlist entry. Either way the note's original text
+      (including the "N/10") is kept as-is in the comment field, never
+      rewritten. Duplicate `google_maps_url`s already
       in the data are skipped. One confirmation + one batch write per
       import.
 - **Export to a real, shareable Google Maps list is not possible**: Google

@@ -25,9 +25,10 @@ const KNOWN_HEADERS = {
 };
 
 // A Note field commonly looks like "7/10" or "7/10\nfree text comment".
-// Only a whole number out of 10 on its own line is treated as a rating;
-// anything else (recommendations, cuisine notes, etc.) is left as a plain
-// comment with no rating, i.e. imported as a wishlist entry.
+// A leading whole number out of 10 is read as a star rating, but the note
+// text is copied into the comment unchanged either way — the "N/10" is
+// not stripped out. No leading rating found means no rating parsed, i.e.
+// imported as a wishlist entry (still with the full note as the comment).
 const RATING_PATTERN = /^\s*(\d{1,2})\s*\/\s*10\.?\s*$/;
 
 export async function decodeImportFile(file) {
@@ -109,16 +110,19 @@ function detectHeader(rows) {
 
 function parseNoteField(note) {
   if (!note) return { rating: null, comment: "" };
-  const normalized = note.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-  const lines = normalized.split("\n");
-  const match = lines[0].trim().match(RATING_PATTERN);
+  const normalized = note.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
+  const firstLine = normalized.split("\n")[0].trim();
+  const match = firstLine.match(RATING_PATTERN);
+  // The star rating is derived from the note, but the note text itself
+  // (including the original "N/10") is kept in the comment verbatim —
+  // it's not rewritten or stripped, just also parsed.
   if (match) {
     const outOfTen = Math.max(0, Math.min(10, Number(match[1])));
     // 0-5/10 -> 0 stars, then 6/10..10/10 -> 1..5 stars (not a halving scale).
     const rating = Math.min(5, Math.max(0, outOfTen - 5));
-    return { rating, comment: lines.slice(1).join("\n").trim() };
+    return { rating, comment: normalized };
   }
-  return { rating: null, comment: normalized.trim() };
+  return { rating: null, comment: normalized };
 }
 
 // Parses the raw CSV text into generic { name, google_maps_url, rating,
