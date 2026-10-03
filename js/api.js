@@ -3,11 +3,16 @@
 
 const API_BASE = "https://api.github.com";
 
+// No X-GitHub-Api-Version header here: GitHub's REST API doesn't include it
+// in Access-Control-Allow-Headers on CORS preflight responses (a known,
+// long-standing GitHub bug), so browsers block the request entirely before
+// it's even sent whenever that header is present and a fresh preflight is
+// required. Omitting it is safe — the API defaults to a sensible current
+// version without it.
 function authHeaders(token) {
   return {
     Authorization: `Bearer ${token}`,
     Accept: "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2022-11-28",
   };
 }
 
