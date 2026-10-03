@@ -374,9 +374,11 @@ pick (Section 2.1).
       (not a halving scale) — if found, it imports as a rated visit;
       otherwise as a wishlist entry. Either way the note's original text
       (including the "N/10") is kept as-is in the comment field, never
-      rewritten. Duplicate `google_maps_url`s already
-      in the data are skipped. One confirmation + one batch write per
-      import.
+      rewritten. The export has no real visit date, so a rated entry's
+      `visited_at` is set to the import date instead (a wishlist entry's
+      stays null — it hasn't been visited). Duplicate `google_maps_url`s
+      already in the data are skipped. One confirmation + one batch write
+      per import.
 - **Export to a real, shareable Google Maps list is not possible**: Google
   has no public API to create or populate a Maps "List" — list creation
   only exists through the Maps app/website UI. Confirmed via research

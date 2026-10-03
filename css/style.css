@@ -199,8 +199,20 @@ th, td {
   border-bottom: 1px solid var(--border);
 }
 
+#restaurant-table th:first-child,
+#restaurant-table td:first-child {
+  width: 1.5rem;
+  padding-right: 0;
+}
+
 tbody tr {
   cursor: pointer;
+}
+
+#btn-delete-selected {
+  background: #c0392b;
+  color: #fff;
+  border-color: #c0392b;
 }
 
 tbody tr:hover {

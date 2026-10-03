@@ -60,6 +60,14 @@ export function removeRating(ratings, id) {
   return ratings.filter((r) => r.id !== id);
 }
 
+// Removes every visit belonging to any of the given restaurant groupKeys
+// (i.e. deleting a whole restaurant row from the list removes all of its
+// visits, not just the one shown).
+export function removeRestaurantGroups(ratings, groupKeys) {
+  const keys = groupKeys instanceof Set ? groupKeys : new Set(groupKeys);
+  return ratings.filter((r) => !keys.has(groupKeyFor(r)));
+}
+
 export function generateId() {
   return crypto.randomUUID().slice(0, 8);
 }

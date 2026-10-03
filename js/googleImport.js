@@ -180,6 +180,7 @@ export function buildRatingsFromImport(entries, { createdBy, existingUrls, gener
       continue;
     }
     const isWishlist = entry.rating === null;
+    const now = new Date();
     toAdd.push({
       id: generateId(),
       name: entry.name || "(unnamed)",
@@ -189,9 +190,12 @@ export function buildRatingsFromImport(entries, { createdBy, existingUrls, gener
       price_level: null,
       comment: entry.comment || "",
       tags: entry.tags,
-      visited_at: null,
+      // The real visit date isn't in the export, so a rated entry gets the
+      // import date instead (not applicable to a wishlist entry, which
+      // hasn't been visited at all). See CLAUDE.md Section 11.3.
+      visited_at: isWishlist ? null : now.toISOString().slice(0, 10),
       created_by: createdBy,
-      created_at: new Date().toISOString(),
+      created_at: now.toISOString(),
     });
   }
 

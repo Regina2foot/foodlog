@@ -76,18 +76,30 @@ export function renderPricePicker(container, onChange) {
   }
 }
 
-const VISITED_COLUMNS = ["Name", "Rating", "Price", "Last comment", "Last visit"];
-const WISHLIST_COLUMNS = ["Name", "Tags", "Added"];
+// Leading "" is the select-checkbox column.
+const VISITED_COLUMNS = ["", "Name", "Rating", "Price", "Last comment", "Last edit"];
+const WISHLIST_COLUMNS = ["", "Name", "Tags", "Added"];
 
-// Rewrites the table header row for the current list view mode.
-export function renderListHeader(headerRow, mode = "visited") {
+// Rewrites the table header row for the current list view mode. The first
+// column is a "select all visible rows" checkbox; `allSelected` reflects
+// whether every currently-visible row is already selected.
+export function renderListHeader(headerRow, mode = "visited", onToggleSelectAll, allSelected = false) {
   headerRow.textContent = "";
   const columns = mode === "wishlist" ? WISHLIST_COLUMNS : VISITED_COLUMNS;
-  for (const col of columns) {
+  columns.forEach((text, idx) => {
     const th = document.createElement("th");
-    th.textContent = col;
+    if (idx === 0) {
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = allSelected;
+      checkbox.setAttribute("aria-label", "Select all visible rows");
+      checkbox.addEventListener("change", () => onToggleSelectAll(checkbox.checked));
+      th.appendChild(checkbox);
+    } else {
+      th.textContent = text;
+    }
     headerRow.appendChild(th);
-  }
+  });
 }
 
 // Renders the grouped restaurant list into `tbody`. `onRowClick` receives the
@@ -95,7 +107,9 @@ export function renderListHeader(headerRow, mode = "visited") {
 // Maps link is optional, so groupKey — not google_maps_url — is what
 // uniquely identifies a restaurant/group; see state.js).
 // `mode` ("visited" | "wishlist") selects which columns to show.
-export function renderRestaurantList(tbody, restaurants, onRowClick, mode = "visited") {
+// `onToggleSelect(groupKey, checked)` fires from each row's checkbox;
+// `selectedKeys` (a Set of groupKeys) sets each checkbox's initial state.
+export function renderRestaurantList(tbody, restaurants, onRowClick, mode = "visited", onToggleSelect, selectedKeys) {
   tbody.textContent = "";
 
   if (restaurants.length === 0) {
@@ -111,6 +125,16 @@ export function renderRestaurantList(tbody, restaurants, onRowClick, mode = "vis
   for (const restaurant of restaurants) {
     const row = document.createElement("tr");
     row.tabIndex = 0;
+
+    const selectCell = document.createElement("td");
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = selectedKeys.has(restaurant.groupKey);
+    checkbox.setAttribute("aria-label", `Select ${restaurant.name}`);
+    checkbox.addEventListener("click", (e) => e.stopPropagation());
+    checkbox.addEventListener("change", () => onToggleSelect(restaurant.groupKey, checkbox.checked));
+    selectCell.appendChild(checkbox);
+    row.appendChild(selectCell);
 
     const nameCell = document.createElement("td");
     nameCell.textContent = restaurant.name;

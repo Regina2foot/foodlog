@@ -1,4 +1,4 @@
-import { createEmptyState, groupByRestaurant, addRating, updateRating, removeRating, generateId } from "./state.js";
+import { createEmptyState, groupByRestaurant, addRating, updateRating, removeRating, removeRestaurantGroups, generateId } from "./state.js";
 import { sortRestaurants } from "./sort.js";
 import { renderRestaurantList, renderListHeader, renderStarPicker, renderPricePicker, setStatus } from "./render.js";
 import { getSettings, saveSettings, removeToken, hasCompleteSettings } from "./settings.js";
@@ -15,6 +15,7 @@ let currentUser = null;
 let detailGroupKey = null; // groupKey of the restaurant currently shown in detail view
 let editingVisitId = null;
 let listView = "visited"; // "visited" | "wishlist"
+const selectedGroupKeys = new Set();
 
 // Applies `mutate` (ratings[] -> ratings[]) and writes the result to the data
 // repo, re-fetching the latest ratings/sha first and retrying once on a 409
@@ -125,6 +126,7 @@ const els = {
   importPanel: document.getElementById("import-panel"),
   importFileInput: document.getElementById("import-file-input"),
   importStatus: document.getElementById("import-status"),
+  deleteSelectedButton: document.getElementById("btn-delete-selected"),
 };
 
 function refreshList() {
@@ -137,9 +139,36 @@ function refreshList() {
     listView === "wishlist"
       ? sortRestaurants(restaurants, "name", "asc")
       : sortRestaurants(restaurants, sortField, sortDir);
-  renderListHeader(els.restaurantTableHeaderRow, listView);
-  renderRestaurantList(els.restaurantListBody, sorted, (key) => showDetail(key), listView);
+
+  const allSelected = sorted.length > 0 && sorted.every((r) => selectedGroupKeys.has(r.groupKey));
+  renderListHeader(els.restaurantTableHeaderRow, listView, (checked) => {
+    for (const r of sorted) {
+      if (checked) selectedGroupKeys.add(r.groupKey);
+      else selectedGroupKeys.delete(r.groupKey);
+    }
+    refreshList();
+  }, allSelected);
+
+  renderRestaurantList(
+    els.restaurantListBody,
+    sorted,
+    (key) => showDetail(key),
+    listView,
+    (groupKey, checked) => {
+      if (checked) selectedGroupKeys.add(groupKey);
+      else selectedGroupKeys.delete(groupKey);
+      updateDeleteSelectedButton();
+    },
+    selectedGroupKeys
+  );
   els.sortControls.hidden = listView === "wishlist";
+  updateDeleteSelectedButton();
+}
+
+function updateDeleteSelectedButton() {
+  const count = selectedGroupKeys.size;
+  els.deleteSelectedButton.hidden = count === 0;
+  els.deleteSelectedButton.textContent = `Delete selected (${count})`;
 }
 
 function findRestaurant(groupKey) {
@@ -225,6 +254,7 @@ function initDetailView() {
 function initViewToggle() {
   function setView(view) {
     listView = view;
+    selectedGroupKeys.clear();
     els.viewVisitedButton.classList.toggle("active", view === "visited");
     els.viewVisitedButton.setAttribute("aria-pressed", String(view === "visited"));
     els.viewWishlistButton.classList.toggle("active", view === "wishlist");
@@ -233,6 +263,31 @@ function initViewToggle() {
   }
   els.viewVisitedButton.addEventListener("click", () => setView("visited"));
   els.viewWishlistButton.addEventListener("click", () => setView("wishlist"));
+}
+
+function initBulkDelete() {
+  els.deleteSelectedButton.addEventListener("click", async () => {
+    const count = selectedGroupKeys.size;
+    if (count === 0) return;
+
+    const confirmed = confirm(
+      `Delete ${count} restaurant(s) and all their visits? This cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    setStatus(els.statusMessage, `Deleting ${count} entries…`);
+    try {
+      await writeWithConflictRetry(
+        (latestRatings) => removeRestaurantGroups(latestRatings, selectedGroupKeys),
+        { message: `Delete ${count} restaurant(s)` }
+      );
+      selectedGroupKeys.clear();
+      refreshList();
+      setStatus(els.statusMessage, `Deleted ${count} entries.`);
+    } catch (err) {
+      setStatus(els.statusMessage, describeError(err, "Failed to delete selected"), true);
+    }
+  });
 }
 
 function initWishlistToggle() {
@@ -451,6 +506,7 @@ async function init() {
   initToolbar();
   initDetailView();
   initViewToggle();
+  initBulkDelete();
   refreshList();
   if (!hasCompleteSettings()) {
     setStatus(els.statusMessage, "Set your data repo and token in Settings to sync ratings.");
