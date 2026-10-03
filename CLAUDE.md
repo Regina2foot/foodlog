@@ -419,6 +419,15 @@ pick (Section 2.1).
   from the original plan in Section 7
 - Repo names are confirmed: `foodlog` (app, public) and `foodlog-data`
   (data, private) — both already exist
+- The app has a `manifest.json` and icons so it can be added to a phone's
+  home screen (standalone display, no browser chrome). Deliberately no
+  service worker (the app needs live network access to function anyway,
+  so offline support isn't worth the complexity) — known trade-off: an
+  already-installed home-screen icon can keep running a stale cached
+  `app.js` after an update and not pick up the new version on its own.
+  If a home-screen install seems to be misbehaving after a deploy, that's
+  the first thing to suspect — remove and re-add the icon rather than
+  assuming new code is broken
 
 ## 14. Workflow for Claude Code
 
