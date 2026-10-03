@@ -19,10 +19,37 @@
   <h1><img src="icons/logo.svg" alt="" width="28" height="28" class="app-logo" />Foodlog</h1>
   <div class="header-actions">
     <button id="btn-refresh" type="button">Refresh</button>
+    <button id="btn-toggle-import" type="button">Import from Google Maps</button>
     <button id="btn-export-csv" type="button">Export CSV</button>
     <button id="btn-toggle-settings" type="button">Settings</button>
   </div>
 </header>
+
+<section id="import-panel" class="panel" hidden>
+  <h2>Import from Google Maps</h2>
+  <p class="hint">
+    Google doesn't offer a way to read your saved Maps lists directly, so
+    this uses Google's own data export instead. Everything here runs in
+    your browser — the file never leaves your device except as new entries
+    written to your data repo.
+  </p>
+  <ol class="hint import-steps">
+    <li>Go to <code>takeout.google.com</code> and sign in.</li>
+    <li>Click "Deselect all", then tick <strong>Saved</strong>.</li>
+    <li>Export once, then open the link Google emails you and download it.</li>
+    <li>Unzip it — inside you'll find one CSV file per Google Maps list you have.</li>
+    <li>Pick the CSV for the list you want below.</li>
+  </ol>
+  <p class="hint">
+    Each place becomes a wishlist entry, unless its note starts with a
+    rating like "7/10" (common if you've been noting your own ratings in
+    Google Maps already) — those import as rated visits instead, with the
+    rating converted to a 0–5 scale (rounded, e.g. 7/10 → 4 stars). You'll
+    see a summary before anything is saved.
+  </p>
+  <input type="file" id="import-file-input" accept=".csv,text/csv" />
+  <p id="import-status" class="hint"></p>
+</section>
 
 <section id="settings-panel" class="panel" hidden>
   <h2>Settings</h2>

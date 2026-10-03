@@ -6,6 +6,7 @@ import { fetchRatings, saveRatings, fetchCurrentUser, GitHubApiError } from "./a
 import { renderRestaurantDetail } from "./history.js";
 import { openMapsUrl, extractNameFromMapsUrl } from "./maps.js";
 import { ratingsToCsv, downloadCsv } from "./csv.js";
+import { decodeImportFile, parseGoogleMapsExport, buildRatingsFromImport } from "./googleImport.js";
 
 const state = createEmptyState();
 let sortField = "rating";
@@ -120,6 +121,10 @@ const els = {
   viewWishlistButton: document.getElementById("btn-view-wishlist"),
   sortControls: document.getElementById("sort-controls"),
   restaurantTableHeaderRow: document.getElementById("restaurant-table-header-row"),
+  toggleImportButton: document.getElementById("btn-toggle-import"),
+  importPanel: document.getElementById("import-panel"),
+  importFileInput: document.getElementById("import-file-input"),
+  importStatus: document.getElementById("import-status"),
 };
 
 function refreshList() {
@@ -233,6 +238,73 @@ function initViewToggle() {
 function initWishlistToggle() {
   els.wishlistCheckbox.addEventListener("change", () => {
     els.visitedFieldsContainer.hidden = els.wishlistCheckbox.checked;
+  });
+}
+
+function initImport() {
+  els.toggleImportButton.addEventListener("click", () => {
+    els.importPanel.hidden = !els.importPanel.hidden;
+  });
+
+  els.importFileInput.addEventListener("change", async () => {
+    const file = els.importFileInput.files[0];
+    if (!file) return;
+
+    if (!hasCompleteSettings()) {
+      setStatus(els.importStatus, "Set your data repo and token in Settings first.", true);
+      els.importFileInput.value = "";
+      return;
+    }
+
+    setStatus(els.importStatus, "Reading file…");
+    try {
+      const text = await decodeImportFile(file);
+      const { entries, error } = parseGoogleMapsExport(text);
+      if (error) {
+        setStatus(els.importStatus, error, true);
+        return;
+      }
+      if (entries.length === 0) {
+        setStatus(els.importStatus, "No places found in that file.", true);
+        return;
+      }
+
+      const existingUrls = new Set(state.ratings.map((r) => r.google_maps_url).filter(Boolean));
+      const { toAdd, skippedDuplicates } = buildRatingsFromImport(entries, {
+        createdBy: currentUser || "unknown",
+        existingUrls,
+        generateId,
+      });
+
+      if (toAdd.length === 0) {
+        setStatus(els.importStatus, `Nothing new to import (${skippedDuplicates} already in your list).`, true);
+        return;
+      }
+
+      const visitedCount = toAdd.filter((r) => r.status === "visited").length;
+      const wishlistCount = toAdd.length - visitedCount;
+      const confirmed = confirm(
+        `Found ${entries.length} place(s) in the file.\n` +
+          `${visitedCount} will be imported as rated visits, ${wishlistCount} as wishlist entries.\n` +
+          (skippedDuplicates > 0 ? `${skippedDuplicates} already in your list will be skipped.\n` : "") +
+          `\nImport ${toAdd.length} new entr${toAdd.length === 1 ? "y" : "ies"}?`
+      );
+      if (!confirmed) {
+        setStatus(els.importStatus, "Import cancelled.");
+        return;
+      }
+
+      setStatus(els.importStatus, `Importing ${toAdd.length} entries…`);
+      await writeWithConflictRetry((latestRatings) => [...latestRatings, ...toAdd], {
+        message: `Import ${toAdd.length} place(s) from Google Maps`,
+      });
+      refreshList();
+      setStatus(els.importStatus, `Imported ${toAdd.length} entries (${visitedCount} rated, ${wishlistCount} wishlist).`);
+    } catch (err) {
+      setStatus(els.importStatus, describeError(err, "Import failed"), true);
+    } finally {
+      els.importFileInput.value = "";
+    }
   });
 }
 
@@ -371,6 +443,7 @@ function initToolbar() {
 async function init() {
   initPickers();
   initSettingsPanel();
+  initImport();
   initMapsNamePrefill();
   initWishlistToggle();
   initRatingForm();

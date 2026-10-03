@@ -90,6 +90,14 @@ form select {
   opacity: 0.75;
 }
 
+.import-steps {
+  padding-left: 1.25rem;
+}
+
+.import-steps li {
+  margin-bottom: 0.25rem;
+}
+
 .star-picker,
 .price-picker {
   display: inline-block;

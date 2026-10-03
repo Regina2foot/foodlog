@@ -228,13 +228,9 @@ extensions are easy, rather than requiring larger rewrites.
       securely (not in this repo, not shared with Claude Code)
 - [ ] (Later, Phase 2) Invite friends as collaborators on the data repo;
       each person generates their own token the same way
-- [ ] **Transfer the existing Google Maps list once**: this is
-      deliberately *not* a permanent part of the app (a one-time task, not
-      worth a permanent import feature). Instead: manually bring the data
-      into the format from Section 8 (e.g. via an intermediate CSV) and
-      insert it directly as the initial content of `ratings.json` — if
-      useful, Claude Code can write a small one-off helper script for
-      this, which does *not* become part of the shipped app
+- [x] **Transfer the existing Google Maps list**: superseded — this is now
+      a permanent in-app feature ("Import from Google Maps" button), not a
+      one-off script. See Section 11.3.
 
 **Note for Claude Code**: this checklist is for me to work through
 directly on github.com — you don't do any of it, and you don't need the
@@ -346,10 +342,14 @@ pick (Section 2.1).
 
 ### 11.1 Later milestones
 
-- **Wishlist**: a "visited" vs. "on the list, not tried yet" status — for
-  restaurant recommendations that haven't been rated yet
-- **Map view** of all rated restaurants, e.g. using OpenStreetMap (instead
-  of Google Maps, to avoid needing Google API billing)
+- [x] **Wishlist**: a "visited" vs. "on the list, not tried yet" status —
+      for restaurant recommendations that haven't been rated yet. Built as
+      a `status` field on each entry (`"visited"` | `"wishlist"`,
+      defaulting to `"visited"` when missing); a toggle on the New rating
+      form; a Rated/Wishlist view switch on the list; editing a visit can
+      flip status either way to convert a wishlist entry once you've been
+- [ ] **Map view** of all rated restaurants, e.g. using OpenStreetMap
+      (instead of Google Maps, to avoid needing Google API billing)
 
 ### 11.2 Smaller optional additions
 
@@ -358,6 +358,33 @@ pick (Section 2.1).
   snapshot in the repo (defense in depth, in addition to the Git history)
 - Search/filter by tags or name
 - Cuisine/category as its own field instead of only free-form tags
+
+### 11.3 Google Maps import/export
+
+- [x] **Import**: a permanent in-app "Import from Google Maps" feature
+      (`js/googleImport.js`), superseding the one-off-script plan from
+      Section 7. Takes a Google Takeout "Saved" export CSV (one file per
+      Maps list), parsed entirely client-side (no external service).
+      Handles the delimiter/header-language variation seen across account
+      locales (e.g. German `Titel/Notiz/URL/Tags/Kommentar` vs. English
+      headers) and a non-UTF-8 file encoding observed in a real export
+      (falls back to Mac OS Roman when UTF-8 decoding fails). A place's
+      Note field is parsed for a leading `N/10` rating (converted to 0–5,
+      rounded) — if found, it imports as a rated visit; otherwise as a
+      wishlist entry. Duplicate `google_maps_url`s already in the data are
+      skipped. One confirmation + one batch write per import.
+- **Export to a real, shareable Google Maps list is not possible**: Google
+  has no public API to create or populate a Maps "List" — list creation
+  only exists through the Maps app/website UI. Confirmed via research
+  2026-10; only unofficial third-party scrapers claim anything in this
+  space, and even those can only read existing shared lists, not create
+  new ones — using one would also mean sending restaurant data to an
+  unverified third party, which conflicts with Section 3.1. A KML-based
+  workaround (import into Google My Maps) isn't available either, since
+  that needs coordinates/addresses per place and Section 8 deliberately
+  never resolves/geocodes the Maps link. The closest fallback, if wanted
+  later, is a nicely formatted plain-text/CSV export for manually sharing
+  recommendations — not attempted yet, not asked for.
 
 ## 12. Technical guidelines
 
@@ -385,8 +412,9 @@ pick (Section 2.1).
 - The rating/price history chart is a hand-rolled SVG, not an external
   charting library, to avoid adding a new dependency (Section 4.1) — can
   revisit if that turns out to be too limiting
-- The one-time import of existing Google Maps data is a manual/one-off
-  task, not a permanent app feature (see Section 7)
+- Importing existing Google Maps data is a permanent in-app feature (CSV
+  from Google Takeout, see Section 11.3), not a one-off script — revised
+  from the original plan in Section 7
 - Repo names are confirmed: `foodlog` (app, public) and `foodlog-data`
   (data, private) — both already exist
 
