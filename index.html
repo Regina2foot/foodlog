@@ -47,6 +47,10 @@
     rating converted to 0–5 stars: 0–5/10 → 0 stars, then 6/10 → 1 star up
     to 10/10 → 5 stars. You'll see a summary before anything is saved.
   </p>
+  <label>
+    Tag these imports with (optional)
+    <input type="text" id="import-tag-input" placeholder="e.g. Gregors recommendations" />
+  </label>
   <input type="file" id="import-file-input" accept=".csv,text/csv" />
   <p id="import-status" class="hint"></p>
 </section>
@@ -103,8 +107,8 @@
       Add to wishlist (haven't visited yet)
     </label>
     <label>
-      Tags (comma separated)
-      <input type="text" id="field-tags" placeholder="Italian, Date night" />
+      Tags
+      <div id="field-tags" class="tag-picker"></div>
     </label>
     <div id="visited-fields">
       <label>
@@ -148,6 +152,15 @@
       </label>
       <button type="button" id="btn-sort-dir" data-dir="desc">↓</button>
     </div>
+    <div class="sort-controls" id="wishlist-tag-filter-container" hidden>
+      <label>
+        Tag
+        <select id="wishlist-tag-filter">
+          <option value="">All tags</option>
+        </select>
+      </label>
+    </div>
+    <button type="button" id="btn-merge-selected" hidden></button>
     <button type="button" id="btn-delete-selected" hidden></button>
   </div>
   <div id="status-message" class="hint"></div>

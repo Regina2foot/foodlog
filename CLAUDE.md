@@ -245,8 +245,8 @@ object represents **one visit/rating**, not one restaurant — the same
 restaurant can be rated again later (e.g. because quality or price
 changed), which simply adds another object with the same
 `google_maps_url`. Entries are grouped into "the same restaurant" by an
-exact match on `google_maps_url` (see Section 9 for how the list and
-detail view use this).
+exact match on `google_maps_url`, or by `restaurant_id` when set (see
+below) — see Section 9 for how the list and detail view use this.
 
 ```json
 [
@@ -254,6 +254,7 @@ detail view use this).
     "id": "a1b2c3",
     "name": "Trattoria Milano",
     "google_maps_url": "https://maps.app.goo.gl/xyz123",
+    "status": "visited",
     "rating": 4,
     "price_level": 2,
     "comment": "Great pasta, loud on weekends",
@@ -265,15 +266,35 @@ detail view use this).
 ]
 ```
 
-- `rating`: whole number 0–5 (no half stars). Deliberately **a single
-  overall rating** that sums up everything (food, service, atmosphere,
-  etc.) — no separate sub-ratings like "would visit again"
+- `status`: `"visited"` | `"wishlist"`. Missing/absent on older entries
+  defaults to `"visited"` (Section 6's "robust to missing fields" rule).
+  A wishlist entry hasn't actually been visited yet: `rating`,
+  `price_level`, and `visited_at` are `null`, `comment` is `""`
+- `rating`: whole number 0–5 (no half stars) when `status` is
+  `"visited"`, otherwise `null`. Deliberately **a single overall rating**
+  that sums up everything (food, service, atmosphere, etc.) — no separate
+  sub-ratings like "would visit again". A real 0-star rating (`0`, not
+  `null`) is a known, visited, poorly-rated place — the UI always shows
+  all 5 stars (filled up to the rating, rest as gray outlines) so this
+  reads differently from a wishlist entry's `null`, which shows as plain
+  "Not yet visited" text instead of a star row
 - `price_level`: whole number 1–3, displayed as 1–3 € symbols (€ / €€ / €€€)
-- `google_maps_url`: stored exactly as pasted in (no parsing, no
-  extracting coordinates — short links can't be reliably resolved
-  client-side anyway). Also used as the key that groups repeat visits to
-  the same restaurant together.
-- `tags`: optional, empty array if not set
+- `google_maps_url`: **optional** — a restaurant can be logged without
+  one. Stored exactly as pasted in (no parsing, no extracting
+  coordinates — short links can't be reliably resolved client-side
+  anyway). Used as the grouping key for repeat visits when present
+- `restaurant_id`: optional, usually absent. Set by the "Merge selected"
+  action (select 2+ restaurant rows you know are the same place) —
+  overrides `google_maps_url` for grouping purposes without rewriting it,
+  so each visit's own URL stays exactly as it was. Lets link-less or
+  differently-linked entries that are actually the same restaurant be
+  grouped together manually
+- `tags`: optional, empty array if not set. Free-form, multiple per
+  entry. Also doubles as a lightweight "category" mechanism — e.g.
+  bulk-tagging an entire Google Maps import as "Gregors recommendations"
+  (Section 11.3) rather than a separate dedicated category field. Set via
+  a checkbox-list picker (existing tags + an "add new tag" box), not a
+  free-text field, both on the New rating form and when editing a visit
 - `created_by`: determined automatically from the token's GitHub account
   (API call `GET /user` with the entered token)
 
@@ -284,18 +305,33 @@ detail view use this).
   tags + visit date. Works both for a brand-new restaurant and for adding
   another visit to a restaurant that's already rated (same
   `google_maps_url` → grouped as the same restaurant, see Section 8)
-- **List/overview**: one row per restaurant (grouped by
-  `google_maps_url`), showing that restaurant's **most recent** visit
+- **List/overview**: one row per restaurant (grouped by `google_maps_url`
+  or `restaurant_id`), showing that restaurant's **most recent** visit
   (rating, price level, comment). Sortable by stars, name, date — sorting
-  uses each restaurant's latest visit
+  uses each restaurant's latest visit. A Rated/Wishlist toggle switches
+  the view (`status`, Section 8); Wishlist rows show tags/date-added
+  columns instead and can be filtered down to one tag at a time
+- **Bulk select**: a checkbox per row plus "select all visible", in both
+  the Rated and Wishlist views
+  - **Delete selected**: removes every checked restaurant *and all of its
+    visits* in one batch write (one confirmation, one commit) — not just
+    the single visit shown in the list row. Deleting one specific visit
+    instead of the whole restaurant is still done from the detail view
+  - **Merge selected**: for 2+ checked rows you know are the same
+    restaurant — tags every one of their visits with a shared
+    `restaurant_id` (Section 8) in one batch write, without touching any
+    visit's own `google_maps_url`
 - **Restaurant detail view**, opened by clicking a row, showing:
   - the full visit history for that restaurant (all past ratings,
     comments, dates)
   - a simple chart of rating (and price level) over time across visits
   - an explicit **"Open in Google Maps"** button/link (with the URL
-    scheme check from Section 4.1)
+    scheme check from Section 4.1) — disabled when the restaurant has no
+    Maps link
   - edit and delete actions for individual visits — same write-conflict
-    handling as when creating (see below)
+    handling as when creating (see below). Editing can flip `status`
+    between visited/wishlist either way, converting a wishlist entry once
+    you've actually been
 - **"Refresh" button**: reloads the data from the repo (no automatic
   real-time sync wanted, a manual reload is enough)
 - **CSV export button**: converts the currently loaded data into a CSV
@@ -356,8 +392,12 @@ pick (Section 2.1).
 - Additional automated backup: a small **Python script** that, e.g.,
   weekly via a GitHub Action, saves `ratings.json` as an extra CSV
   snapshot in the repo (defense in depth, in addition to the Git history)
-- Search/filter by tags or name
-- Cuisine/category as its own field instead of only free-form tags
+- [x] Filter by tag — built, but **Wishlist view only** so far (a
+      dropdown of that view's distinct tags). Not done: the same for the
+      Rated view, or filtering/searching by name
+- [x] Decided: no separate category field — tags double as categories
+      (e.g. bulk-tagging a Google Maps import as "Gregors
+      recommendations", Section 11.3), see Section 8
 
 ### 11.3 Google Maps import/export
 
@@ -377,8 +417,11 @@ pick (Section 2.1).
       rewritten. The export has no real visit date, so a rated entry's
       `visited_at` is set to the import date instead (a wishlist entry's
       stays null — it hasn't been visited). Duplicate `google_maps_url`s
-      already in the data are skipped. One confirmation + one batch write
-      per import.
+      already in the data are skipped. The import panel has an optional
+      "tag these imports with" field (e.g. "Gregors recommendations" for
+      a friend's list) applied to every entry from that file — this is
+      the category mechanism from Section 8, not a separate feature. One
+      confirmation + one batch write per import.
 - **Export to a real, shareable Google Maps list is not possible**: Google
   has no public API to create or populate a Maps "List" — list creation
   only exists through the Maps app/website UI. Confirmed via research

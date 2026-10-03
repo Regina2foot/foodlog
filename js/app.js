@@ -1,6 +1,6 @@
-import { createEmptyState, groupByRestaurant, addRating, updateRating, removeRating, removeRestaurantGroups, generateId } from "./state.js";
+import { createEmptyState, groupByRestaurant, addRating, updateRating, removeRating, removeRestaurantGroups, mergeRestaurantGroups, generateId } from "./state.js";
 import { sortRestaurants } from "./sort.js";
-import { renderRestaurantList, renderListHeader, renderStarPicker, renderPricePicker, setStatus } from "./render.js";
+import { renderRestaurantList, renderListHeader, renderStarPicker, renderPricePicker, renderTagPicker, setStatus } from "./render.js";
 import { getSettings, saveSettings, removeToken, hasCompleteSettings } from "./settings.js";
 import { fetchRatings, saveRatings, fetchCurrentUser, GitHubApiError } from "./api.js";
 import { renderRestaurantDetail } from "./history.js";
@@ -15,6 +15,8 @@ let currentUser = null;
 let detailGroupKey = null; // groupKey of the restaurant currently shown in detail view
 let editingVisitId = null;
 let listView = "visited"; // "visited" | "wishlist"
+let wishlistTagFilter = ""; // "" = all tags
+let formTags = []; // New rating form's current tag selection
 const selectedGroupKeys = new Set();
 
 // Applies `mutate` (ratings[] -> ratings[]) and writes the result to the data
@@ -109,7 +111,7 @@ const els = {
   ratingPicker: document.getElementById("field-rating"),
   pricePicker: document.getElementById("field-price"),
   commentInput: document.getElementById("field-comment"),
-  tagsInput: document.getElementById("field-tags"),
+  tagsPicker: document.getElementById("field-tags"),
   visitedAtInput: document.getElementById("field-visited-at"),
   listPanel: document.getElementById("list-panel"),
   formPanel: document.getElementById("form-panel"),
@@ -125,15 +127,30 @@ const els = {
   toggleImportButton: document.getElementById("btn-toggle-import"),
   importPanel: document.getElementById("import-panel"),
   importFileInput: document.getElementById("import-file-input"),
+  importTagInput: document.getElementById("import-tag-input"),
   importStatus: document.getElementById("import-status"),
   deleteSelectedButton: document.getElementById("btn-delete-selected"),
+  mergeSelectedButton: document.getElementById("btn-merge-selected"),
+  wishlistTagFilterContainer: document.getElementById("wishlist-tag-filter-container"),
+  wishlistTagFilterSelect: document.getElementById("wishlist-tag-filter"),
 };
 
 function refreshList() {
-  const filtered = state.ratings.filter((r) => {
+  const byView = state.ratings.filter((r) => {
     const status = r.status || "visited";
     return listView === "wishlist" ? status === "wishlist" : status !== "wishlist";
   });
+
+  if (listView === "wishlist") {
+    refreshWishlistTagOptions(byView);
+  }
+  els.wishlistTagFilterContainer.hidden = listView !== "wishlist";
+
+  const filtered =
+    listView === "wishlist" && wishlistTagFilter
+      ? byView.filter((r) => (r.tags || []).includes(wishlistTagFilter))
+      : byView;
+
   const restaurants = groupByRestaurant(filtered);
   const sorted =
     listView === "wishlist"
@@ -157,18 +174,68 @@ function refreshList() {
     (groupKey, checked) => {
       if (checked) selectedGroupKeys.add(groupKey);
       else selectedGroupKeys.delete(groupKey);
-      updateDeleteSelectedButton();
+      updateBulkActionButtons();
     },
     selectedGroupKeys
   );
   els.sortControls.hidden = listView === "wishlist";
-  updateDeleteSelectedButton();
+  updateBulkActionButtons();
+  refreshTagPicker();
 }
 
-function updateDeleteSelectedButton() {
+function allKnownTags() {
+  const tags = new Set();
+  for (const r of state.ratings) {
+    for (const t of r.tags || []) tags.add(t);
+  }
+  return [...tags].sort((a, b) => a.localeCompare(b));
+}
+
+// Re-renders the New rating form's tag picker, preserving the current
+// in-progress selection (formTags) while refreshing which tags are
+// available to pick from.
+function refreshTagPicker() {
+  renderTagPicker(els.tagsPicker, allKnownTags(), formTags, (next) => {
+    formTags = next;
+    refreshTagPicker();
+  });
+}
+
+// Rebuilds the wishlist tag-filter dropdown from the distinct tags present
+// across all wishlist entries (not just the currently filtered ones, so
+// every available option stays choosable). Keeps the current selection if
+// it's still a valid tag, otherwise resets to "All tags".
+function refreshWishlistTagOptions(wishlistEntries) {
+  const tags = new Set();
+  for (const r of wishlistEntries) {
+    for (const t of r.tags || []) tags.add(t);
+  }
+  const sortedTags = [...tags].sort((a, b) => a.localeCompare(b));
+
+  if (wishlistTagFilter && !tags.has(wishlistTagFilter)) {
+    wishlistTagFilter = "";
+  }
+
+  els.wishlistTagFilterSelect.textContent = "";
+  const allOption = document.createElement("option");
+  allOption.value = "";
+  allOption.textContent = "All tags";
+  els.wishlistTagFilterSelect.appendChild(allOption);
+  for (const tag of sortedTags) {
+    const option = document.createElement("option");
+    option.value = tag;
+    option.textContent = tag;
+    els.wishlistTagFilterSelect.appendChild(option);
+  }
+  els.wishlistTagFilterSelect.value = wishlistTagFilter;
+}
+
+function updateBulkActionButtons() {
   const count = selectedGroupKeys.size;
   els.deleteSelectedButton.hidden = count === 0;
   els.deleteSelectedButton.textContent = `Delete selected (${count})`;
+  els.mergeSelectedButton.hidden = count < 2;
+  els.mergeSelectedButton.textContent = `Merge selected (${count})`;
 }
 
 function findRestaurant(groupKey) {
@@ -226,7 +293,8 @@ function refreshDetail() {
         }
       },
     },
-    editingVisitId
+    editingVisitId,
+    allKnownTags()
   );
 }
 
@@ -290,6 +358,33 @@ function initBulkDelete() {
   });
 }
 
+function initBulkMerge() {
+  els.mergeSelectedButton.addEventListener("click", async () => {
+    const count = selectedGroupKeys.size;
+    if (count < 2) return;
+
+    const confirmed = confirm(
+      `Merge ${count} selected restaurants into one? Their visit histories will be combined. This cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    const keysToMerge = new Set(selectedGroupKeys);
+    const newRestaurantId = generateId();
+    setStatus(els.statusMessage, `Merging ${count} restaurants…`);
+    try {
+      await writeWithConflictRetry(
+        (latestRatings) => mergeRestaurantGroups(latestRatings, keysToMerge, newRestaurantId),
+        { message: `Merge ${count} restaurants` }
+      );
+      selectedGroupKeys.clear();
+      refreshList();
+      setStatus(els.statusMessage, `Merged ${count} restaurants into one.`);
+    } catch (err) {
+      setStatus(els.statusMessage, describeError(err, "Failed to merge selected"), true);
+    }
+  });
+}
+
 function initWishlistToggle() {
   els.wishlistCheckbox.addEventListener("change", () => {
     els.visitedFieldsContainer.hidden = els.wishlistCheckbox.checked;
@@ -336,12 +431,20 @@ function initImport() {
         return;
       }
 
+      const bulkTag = els.importTagInput.value.trim();
+      if (bulkTag) {
+        for (const r of toAdd) {
+          if (!r.tags.includes(bulkTag)) r.tags = [...r.tags, bulkTag];
+        }
+      }
+
       const visitedCount = toAdd.filter((r) => r.status === "visited").length;
       const wishlistCount = toAdd.length - visitedCount;
       const confirmed = confirm(
         `Found ${entries.length} place(s) in the file.\n` +
           `${visitedCount} will be imported as rated visits, ${wishlistCount} as wishlist entries.\n` +
           (skippedDuplicates > 0 ? `${skippedDuplicates} already in your list will be skipped.\n` : "") +
+          (bulkTag ? `All will be tagged "${bulkTag}".\n` : "") +
           `\nImport ${toAdd.length} new entr${toAdd.length === 1 ? "y" : "ies"}?`
       );
       if (!confirmed) {
@@ -353,6 +456,7 @@ function initImport() {
       await writeWithConflictRetry((latestRatings) => [...latestRatings, ...toAdd], {
         message: `Import ${toAdd.length} place(s) from Google Maps`,
       });
+      els.importTagInput.value = "";
       refreshList();
       setStatus(els.importStatus, `Imported ${toAdd.length} entries (${visitedCount} rated, ${wishlistCount} wishlist).`);
     } catch (err) {
@@ -436,10 +540,7 @@ function initRatingForm() {
       rating: isWishlist ? null : Number(els.ratingPicker.dataset.value || 0),
       price_level: isWishlist ? null : Number(els.pricePicker.dataset.value || 0),
       comment: isWishlist ? "" : els.commentInput.value.trim(),
-      tags: els.tagsInput.value
-        .split(",")
-        .map((t) => t.trim())
-        .filter(Boolean),
+      tags: formTags,
       visited_at: isWishlist ? null : els.visitedAtInput.value || new Date().toISOString().slice(0, 10),
       created_by: currentUser || "unknown",
       created_at: new Date().toISOString(),
@@ -450,12 +551,13 @@ function initRatingForm() {
       await writeWithConflictRetry((latestRatings) => addRating(latestRatings, rating), {
         message: isWishlist ? `Add ${rating.name || "restaurant"} to wishlist` : `Add rating for ${rating.name || "restaurant"}`,
       });
-      refreshList();
       els.ratingForm.reset();
       els.ratingPicker.dataset.value = "0";
       els.pricePicker.dataset.value = "0";
       els.visitedFieldsContainer.hidden = false;
+      formTags = [];
       initPickers();
+      refreshList();
       setStatus(els.statusMessage, isWishlist ? "Added to wishlist." : "Rating saved.");
     } catch (err) {
       setStatus(els.statusMessage, describeError(err, "Failed to save rating"), true);
@@ -473,6 +575,11 @@ function initSortControls() {
     sortDir = sortDir === "desc" ? "asc" : "desc";
     els.sortDirButton.textContent = sortDir === "desc" ? "↓" : "↑";
     els.sortDirButton.dataset.dir = sortDir;
+    refreshList();
+  });
+
+  els.wishlistTagFilterSelect.addEventListener("change", () => {
+    wishlistTagFilter = els.wishlistTagFilterSelect.value;
     refreshList();
   });
 }
@@ -507,6 +614,7 @@ async function init() {
   initDetailView();
   initViewToggle();
   initBulkDelete();
+  initBulkMerge();
   refreshList();
   if (!hasCompleteSettings()) {
     setStatus(els.statusMessage, "Set your data repo and token in Settings to sync ratings.");

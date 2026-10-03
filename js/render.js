@@ -76,6 +76,66 @@ export function renderPricePicker(container, onChange) {
   }
 }
 
+// Checkbox list of known tags plus a text input to add a brand-new one.
+// `allTags` is every tag seen anywhere else; `selectedTags` is this form's
+// current selection. A tag just typed into the "new tag" box (not yet
+// saved anywhere, so not in `allTags`) is still shown, checked, via the
+// allTags/selectedTags union, so it doesn't disappear on re-render.
+// onChange(nextSelectedTags) fires on every change.
+export function renderTagPicker(container, allTags, selectedTags, onChange) {
+  container.textContent = "";
+  const displayTags = [...new Set([...allTags, ...selectedTags])].sort((a, b) => a.localeCompare(b));
+
+  const list = document.createElement("div");
+  list.className = "tag-picker-list";
+  for (const tag of displayTags) {
+    const label = document.createElement("label");
+    label.className = "tag-picker-item";
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = selectedTags.includes(tag);
+    checkbox.addEventListener("change", () => {
+      const next = checkbox.checked ? [...selectedTags, tag] : selectedTags.filter((t) => t !== tag);
+      onChange(next);
+    });
+    label.append(checkbox, document.createTextNode(tag));
+    list.appendChild(label);
+  }
+  if (displayTags.length === 0) {
+    const empty = document.createElement("span");
+    empty.className = "hint";
+    empty.textContent = "No tags yet.";
+    list.appendChild(empty);
+  }
+  container.appendChild(list);
+
+  const addRow = document.createElement("div");
+  addRow.className = "tag-picker-add";
+  const input = document.createElement("input");
+  input.type = "text";
+  input.placeholder = "New tag";
+  const addButton = document.createElement("button");
+  addButton.type = "button";
+  addButton.textContent = "Add tag";
+  const addNewTag = () => {
+    const value = input.value.trim();
+    if (!value) return;
+    if (!selectedTags.includes(value)) {
+      onChange([...selectedTags, value]);
+    }
+    input.value = "";
+  };
+  addButton.addEventListener("click", addNewTag);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      addNewTag();
+    }
+  });
+  addRow.append(input, addButton);
+  container.appendChild(addRow);
+}
+
 // Leading "" is the select-checkbox column.
 const VISITED_COLUMNS = ["", "Name", "Rating", "Price", "Last comment", "Last edit"];
 const WISHLIST_COLUMNS = ["", "Name", "Tags", "Added"];

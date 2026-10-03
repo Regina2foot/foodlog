@@ -13,8 +13,13 @@ export function createEmptyState() {
 // link-less entries are the same place. `groupKey` is used everywhere
 // internally to identify a restaurant/group; `google_maps_url` on the
 // returned restaurant stays the real (possibly empty) value for display.
+//
+// `restaurant_id`, when present, overrides both — it's how manually
+// merging restaurants works (see mergeRestaurantGroups below): visits get
+// tagged with a shared restaurant_id without touching their own
+// google_maps_url, which stays exactly as pasted (Section 8).
 function groupKeyFor(visit) {
-  return visit.google_maps_url || `__no-url-${visit.id}`;
+  return visit.restaurant_id || visit.google_maps_url || `__no-url-${visit.id}`;
 }
 
 // Groups visits into restaurants (see CLAUDE.md Section 8/13). Each
@@ -66,6 +71,16 @@ export function removeRating(ratings, id) {
 export function removeRestaurantGroups(ratings, groupKeys) {
   const keys = groupKeys instanceof Set ? groupKeys : new Set(groupKeys);
   return ratings.filter((r) => !keys.has(groupKeyFor(r)));
+}
+
+// Merges several restaurant groups into one by tagging every visit in any
+// of them with the same new restaurant_id, which groupKeyFor prefers over
+// google_maps_url. Each visit's own google_maps_url is left untouched.
+export function mergeRestaurantGroups(ratings, groupKeys, newRestaurantId) {
+  const keys = groupKeys instanceof Set ? groupKeys : new Set(groupKeys);
+  return ratings.map((r) =>
+    keys.has(groupKeyFor(r)) ? { ...r, restaurant_id: newRestaurantId } : r
+  );
 }
 
 export function generateId() {

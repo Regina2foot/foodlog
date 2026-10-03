@@ -3,7 +3,7 @@
 // "Open in Google Maps" action. All user-supplied text is set via
 // textContent, never innerHTML (see CLAUDE.md Section 4.1).
 
-import { buildStarsDisplay, formatPrice, renderStarPicker, renderPricePicker } from "./render.js";
+import { buildStarsDisplay, formatPrice, renderStarPicker, renderPricePicker, renderTagPicker } from "./render.js";
 import { isSafeHttpUrl } from "./maps.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -111,7 +111,7 @@ function renderVisitRow(visit, { onEdit, onDelete }) {
   return row;
 }
 
-function renderVisitEditForm(visit, { onSave, onCancel }) {
+function renderVisitEditForm(visit, allTags, { onSave, onCancel }) {
   const row = el("tr");
   const cell = el("td", { colSpan: 6 });
 
@@ -127,11 +127,15 @@ function renderVisitEditForm(visit, { onSave, onCancel }) {
   renderPricePicker(pricePicker, () => {});
 
   const commentInput = el("input", { type: "text", value: visit.comment || "", placeholder: "Comment" });
-  const tagsInput = el("input", {
-    type: "text",
-    value: (visit.tags || []).join(", "),
-    placeholder: "Tags (comma separated)",
-  });
+  let selectedTags = [...(visit.tags || [])];
+  const tagsContainer = el("div", { className: "tag-picker" });
+  const refreshTags = () => {
+    renderTagPicker(tagsContainer, allTags, selectedTags, (next) => {
+      selectedTags = next;
+      refreshTags();
+    });
+  };
+  refreshTags();
   const dateInput = el("input", { type: "date", value: visit.visited_at || "" });
 
   const visitedFields = el("div", { className: "form-actions", hidden: visit.status === "wishlist" }, [
@@ -153,7 +157,7 @@ function renderVisitEditForm(visit, { onSave, onCancel }) {
       rating: isWishlist ? null : Number(ratingPicker.dataset.value || 0),
       price_level: isWishlist ? null : Number(pricePicker.dataset.value || 0),
       comment: isWishlist ? "" : commentInput.value.trim(),
-      tags: tagsInput.value.split(",").map((t) => t.trim()).filter(Boolean),
+      tags: selectedTags,
       visited_at: isWishlist ? null : dateInput.value || visit.visited_at,
     });
   });
@@ -161,14 +165,15 @@ function renderVisitEditForm(visit, { onSave, onCancel }) {
   cancelButton.addEventListener("click", onCancel);
 
   const buttons = el("div", { className: "form-actions" }, [saveButton, cancelButton]);
-  const form = el("div", {}, [wishlistLabel, tagsInput, visitedFields, buttons]);
+  const form = el("div", {}, [wishlistLabel, tagsContainer, visitedFields, buttons]);
   cell.appendChild(form);
   row.appendChild(cell);
   return row;
 }
 
 // callbacks: onOpenMaps(url), onEdit(id), onCancelEdit(), onSaveEdit(id, changes), onDelete(id)
-export function renderRestaurantDetail(container, restaurant, callbacks, editingVisitId = null) {
+// `allTags` is every tag seen anywhere, passed through to the edit form's tag picker.
+export function renderRestaurantDetail(container, restaurant, callbacks, editingVisitId = null, allTags = []) {
   container.textContent = "";
 
   const heading = el("h2", { textContent: restaurant.name });
@@ -196,7 +201,7 @@ export function renderRestaurantDetail(container, restaurant, callbacks, editing
   for (const visit of restaurant.visits) {
     if (visit.id === editingVisitId) {
       tbody.appendChild(
-        renderVisitEditForm(visit, {
+        renderVisitEditForm(visit, allTags, {
           onSave: callbacks.onSaveEdit,
           onCancel: callbacks.onCancelEdit,
         })
