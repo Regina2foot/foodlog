@@ -369,10 +369,12 @@ pick (Section 2.1).
       locales (e.g. German `Titel/Notiz/URL/Tags/Kommentar` vs. English
       headers) and a non-UTF-8 file encoding observed in a real export
       (falls back to Mac OS Roman when UTF-8 decoding fails). A place's
-      Note field is parsed for a leading `N/10` rating (converted to 0–5,
-      rounded) — if found, it imports as a rated visit; otherwise as a
-      wishlist entry. Duplicate `google_maps_url`s already in the data are
-      skipped. One confirmation + one batch write per import.
+      Note field is parsed for a leading `N/10` rating, converted to 0–5
+      stars as 0–5/10 → 0 stars, then 6/10 → 1 star up to 10/10 → 5 stars
+      (not a halving scale) — if found, it imports as a rated visit;
+      otherwise as a wishlist entry. Duplicate `google_maps_url`s already
+      in the data are skipped. One confirmation + one batch write per
+      import.
 - **Export to a real, shareable Google Maps list is not possible**: Google
   has no public API to create or populate a Maps "List" — list creation
   only exists through the Maps app/website UI. Confirmed via research

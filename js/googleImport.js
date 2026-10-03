@@ -114,7 +114,8 @@ function parseNoteField(note) {
   const match = lines[0].trim().match(RATING_PATTERN);
   if (match) {
     const outOfTen = Math.max(0, Math.min(10, Number(match[1])));
-    const rating = Math.max(0, Math.min(5, Math.round(outOfTen / 2)));
+    // 0-5/10 -> 0 stars, then 6/10..10/10 -> 1..5 stars (not a halving scale).
+    const rating = Math.min(5, Math.max(0, outOfTen - 5));
     return { rating, comment: lines.slice(1).join("\n").trim() };
   }
   return { rating: null, comment: normalized.trim() };
