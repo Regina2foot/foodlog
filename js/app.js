@@ -400,6 +400,10 @@ function initImport() {
     const file = els.importFileInput.files[0];
     if (!file) return;
 
+    if (!els.importTagInput.value.trim()) {
+      els.importTagInput.value = file.name.replace(/\.csv$/i, "");
+    }
+
     if (!hasCompleteSettings()) {
       setStatus(els.importStatus, "Set your data repo and token in Settings first.", true);
       els.importFileInput.value = "";

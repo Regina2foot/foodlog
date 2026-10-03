@@ -420,7 +420,10 @@ pick (Section 2.1).
       already in the data are skipped. The import panel has an optional
       "tag these imports with" field (e.g. "Gregors recommendations" for
       a friend's list) applied to every entry from that file — this is
-      the category mechanism from Section 8, not a separate feature. One
+      the category mechanism from Section 8, not a separate feature.
+      Auto-filled from the chosen CSV's filename (minus `.csv`) when left
+      empty, so e.g. picking "Gregors recommendations.csv" needs no manual
+      typing — still editable before the import is confirmed. One
       confirmation + one batch write per import.
 - **Export to a real, shareable Google Maps list is not possible**: Google
   has no public API to create or populate a Maps "List" — list creation
