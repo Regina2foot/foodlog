@@ -7,6 +7,7 @@ import { renderRestaurantDetail } from "./history.js";
 import { openMapsUrl, extractNameFromMapsUrl } from "./maps.js";
 import { ratingsToCsv, downloadCsv } from "./csv.js";
 import { decodeImportFile, parseGoogleMapsExport, buildRatingsFromImport } from "./googleImport.js";
+import { extractPlaceKey, normalizeName, createMatcher, findDuplicateGroups } from "./duplicates.js";
 
 const state = createEmptyState();
 let sortField = "rating";
@@ -17,6 +18,8 @@ let editingVisitId = null;
 let listView = "visited"; // "visited" | "wishlist"
 let wishlistTagFilter = ""; // "" = all tags
 let formTags = []; // New rating form's current tag selection
+let showDuplicates = false;
+let nameSearch = ""; // normalized, "" = no search
 const selectedGroupKeys = new Set();
 
 // Applies `mutate` (ratings[] -> ratings[]) and writes the result to the data
@@ -135,32 +138,56 @@ const els = {
   mergeSelectedButton: document.getElementById("btn-merge-selected"),
   wishlistTagFilterContainer: document.getElementById("wishlist-tag-filter-container"),
   wishlistTagFilterSelect: document.getElementById("wishlist-tag-filter"),
+  viewToggle: document.getElementById("view-toggle"),
+  showDuplicatesCheckbox: document.getElementById("show-duplicates"),
+  nameSearchInput: document.getElementById("name-search"),
+  duplicateWarning: document.getElementById("duplicate-warning"),
 };
 
+function hasVisitedVisit(restaurant) {
+  return restaurant.visits.some((v) => (v.status || "visited") !== "wishlist");
+}
+
+function matchesNameSearch(restaurant) {
+  return !nameSearch || restaurant.visits.some((v) => normalizeName(v.name).includes(nameSearch));
+}
+
 function refreshList() {
-  const byView = state.ratings.filter((r) => {
-    const status = r.status || "visited";
-    return listView === "wishlist" ? status === "wishlist" : status !== "wishlist";
-  });
+  // Group first, then classify whole restaurants: one with any rated visit
+  // belongs in Rated; only all-wishlist restaurants stay in Wishlist. (A
+  // wishlist entry merged/attached to a rated one must not linger there.)
+  const allRestaurants = groupByRestaurant(state.ratings);
+  let sorted;
+  let mode;
+  const groupStartKeys = new Set();
 
-  if (listView === "wishlist") {
-    refreshWishlistTagOptions(byView);
+  if (showDuplicates) {
+    const groups = findDuplicateGroups(allRestaurants).filter((g) => g.some(matchesNameSearch));
+    groups.forEach((g) => groupStartKeys.add(g[0].groupKey));
+    sorted = groups.flat();
+    mode = "duplicates";
+  } else {
+    const inView = allRestaurants.filter((r) => (listView === "wishlist" ? !hasVisitedVisit(r) : hasVisitedVisit(r)));
+    if (listView === "wishlist") {
+      refreshWishlistTagOptions(inView.flatMap((r) => r.visits));
+    }
+    const filtered = inView.filter(
+      (r) =>
+        matchesNameSearch(r) &&
+        (listView !== "wishlist" || !wishlistTagFilter || r.visits.some((v) => (v.tags || []).includes(wishlistTagFilter)))
+    );
+    sorted =
+      listView === "wishlist"
+        ? sortRestaurants(filtered, "name", "asc")
+        : sortRestaurants(filtered, sortField, sortDir);
+    mode = listView;
   }
-  els.wishlistTagFilterContainer.hidden = listView !== "wishlist";
 
-  const filtered =
-    listView === "wishlist" && wishlistTagFilter
-      ? byView.filter((r) => (r.tags || []).includes(wishlistTagFilter))
-      : byView;
-
-  const restaurants = groupByRestaurant(filtered);
-  const sorted =
-    listView === "wishlist"
-      ? sortRestaurants(restaurants, "name", "asc")
-      : sortRestaurants(restaurants, sortField, sortDir);
+  els.viewToggle.hidden = showDuplicates;
+  els.wishlistTagFilterContainer.hidden = showDuplicates || listView !== "wishlist";
 
   const allSelected = sorted.length > 0 && sorted.every((r) => selectedGroupKeys.has(r.groupKey));
-  renderListHeader(els.restaurantTableHeaderRow, listView, (checked) => {
+  renderListHeader(els.restaurantTableHeaderRow, mode, (checked) => {
     for (const r of sorted) {
       if (checked) selectedGroupKeys.add(r.groupKey);
       else selectedGroupKeys.delete(r.groupKey);
@@ -172,15 +199,16 @@ function refreshList() {
     els.restaurantListBody,
     sorted,
     (key) => showDetail(key),
-    listView,
+    mode,
     (groupKey, checked) => {
       if (checked) selectedGroupKeys.add(groupKey);
       else selectedGroupKeys.delete(groupKey);
       updateBulkActionButtons();
     },
-    selectedGroupKeys
+    selectedGroupKeys,
+    { groupStartKeys, emptyMessage: nameSearch ? "No restaurants match your search." : undefined }
   );
-  els.sortControls.hidden = listView === "wishlist";
+  els.sortControls.hidden = showDuplicates || listView === "wishlist";
   updateBulkActionButtons();
   refreshTagPicker();
 }
@@ -335,6 +363,21 @@ function initViewToggle() {
   els.viewWishlistButton.addEventListener("click", () => setView("wishlist"));
 }
 
+// Selection is cleared whenever the visible set changes, so bulk actions
+// never touch rows that are currently hidden by search or the duplicates view.
+function initListFilters() {
+  els.showDuplicatesCheckbox.addEventListener("change", () => {
+    showDuplicates = els.showDuplicatesCheckbox.checked;
+    selectedGroupKeys.clear();
+    refreshList();
+  });
+  els.nameSearchInput.addEventListener("input", () => {
+    nameSearch = normalizeName(els.nameSearchInput.value);
+    selectedGroupKeys.clear();
+    refreshList();
+  });
+}
+
 function initBulkDelete() {
   els.deleteSelectedButton.addEventListener("click", async () => {
     const count = selectedGroupKeys.size;
@@ -425,10 +468,15 @@ function initImport() {
         return;
       }
 
-      const existingUrls = new Set(state.ratings.map((r) => r.google_maps_url).filter(Boolean));
+      const knownUrls = new Set(state.ratings.map((r) => (r.google_maps_url || "").trim()).filter(Boolean));
+      const knownPlaceKeys = new Set(state.ratings.map((r) => extractPlaceKey(r.google_maps_url)).filter(Boolean));
+      const isKnownPlace = (url) => {
+        const key = extractPlaceKey(url);
+        return knownUrls.has(url.trim()) || (key !== null && knownPlaceKeys.has(key));
+      };
       const { toAdd, skippedDuplicates } = buildRatingsFromImport(entries, {
         createdBy: currentUser || "unknown",
-        existingUrls,
+        isKnownPlace,
         generateId,
       });
 
@@ -444,12 +492,25 @@ function initImport() {
         }
       }
 
+      // Same-place matches were already skipped above; anything still
+      // matching is a name-only similarity — imported, but called out.
+      const matchExisting = createMatcher(groupByRestaurant(state.ratings));
+      const nameSimilar = toAdd.filter((r) => matchExisting(r).length > 0);
+      const nameSimilarNote =
+        nameSimilar.length > 0
+          ? `${nameSimilar.length} have a similar name to restaurants you already have (e.g. ${nameSimilar
+              .slice(0, 3)
+              .map((r) => `"${r.name}"`)
+              .join(", ")}). They'll be imported — check them afterwards with "Show possible duplicates".\n`
+          : "";
+
       const visitedCount = toAdd.filter((r) => r.status === "visited").length;
       const wishlistCount = toAdd.length - visitedCount;
       const confirmed = confirm(
         `Found ${entries.length} place(s) in the file.\n` +
           `${visitedCount} will be imported as rated visits, ${wishlistCount} as wishlist entries.\n` +
-          (skippedDuplicates > 0 ? `${skippedDuplicates} already in your list will be skipped.\n` : "") +
+          (skippedDuplicates > 0 ? `${skippedDuplicates} already in your list (same Google Maps place) will be skipped.\n` : "") +
+          nameSimilarNote +
           (bulkTag ? `All will be tagged "${bulkTag}".\n` : "") +
           `\nImport ${toAdd.length} new entr${toAdd.length === 1 ? "y" : "ies"}?`
       );
@@ -543,46 +604,122 @@ function updateSettingsStatus() {
   setStatus(els.settingsStatus, parts.join(" "));
 }
 
+// Read fresh from the form every time it's needed (incl. from the duplicate
+// warning's buttons), so edits made while the warning is shown aren't lost.
+function buildRatingFromForm() {
+  const isWishlist = els.wishlistCheckbox.checked;
+  return {
+    id: generateId(),
+    name: els.nameInput.value.trim(),
+    google_maps_url: els.mapsUrlInput.value.trim(),
+    status: isWishlist ? "wishlist" : "visited",
+    rating: isWishlist ? null : Number(els.ratingPicker.dataset.value || 0),
+    price_level: isWishlist ? null : Number(els.pricePicker.dataset.value || 0),
+    comment: isWishlist ? "" : els.commentInput.value.trim(),
+    tags: formTags,
+    visited_at: isWishlist ? null : els.visitedAtInput.value || new Date().toISOString().slice(0, 10),
+    created_by: currentUser || "unknown",
+    created_at: new Date().toISOString(),
+  };
+}
+
+function hideDuplicateWarning() {
+  els.duplicateWarning.hidden = true;
+  els.duplicateWarning.textContent = "";
+}
+
+const MAX_SHOWN_MATCHES = 3;
+
+function showDuplicateWarning(matches) {
+  const box = els.duplicateWarning;
+  box.textContent = "";
+  const reasonText = (reason) => (reason === "place" ? "same Google Maps place" : "similar name");
+
+  const intro = document.createElement("p");
+  intro.textContent =
+    matches.length === 1
+      ? `This looks like "${matches[0].restaurant.name}" already in your list (${reasonText(matches[0].reason)}).`
+      : "This looks like a restaurant already in your list:";
+  box.appendChild(intro);
+
+  const actions = document.createElement("div");
+  actions.className = "form-actions duplicate-actions";
+  for (const { restaurant, reason } of matches.slice(0, MAX_SHOWN_MATCHES)) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent =
+      matches.length === 1
+        ? `Add as another visit to "${restaurant.name}"`
+        : `Add as visit to "${restaurant.name}" (${reasonText(reason)})`;
+    button.addEventListener("click", () => saveNewRating(buildRatingFromForm(), restaurant.groupKey));
+    actions.appendChild(button);
+  }
+  const separate = document.createElement("button");
+  separate.type = "button";
+  separate.textContent = "Save separately";
+  separate.addEventListener("click", () => saveNewRating(buildRatingFromForm(), null));
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.textContent = "Cancel";
+  cancel.addEventListener("click", hideDuplicateWarning);
+  actions.append(separate, cancel);
+  box.appendChild(actions);
+
+  box.hidden = false;
+}
+
+// `attachToGroupKey`: if set, the new visit joins that existing restaurant —
+// both share a restaurant_id (reusing the group's own if it has one), the
+// same mechanism as "Merge selected".
+async function saveNewRating(rating, attachToGroupKey) {
+  hideDuplicateWarning();
+  const isWishlist = rating.status === "wishlist";
+  setStatus(els.statusMessage, isWishlist ? "Saving to wishlist…" : "Saving rating…");
+  try {
+    await writeWithConflictRetry(
+      (latestRatings) => {
+        const existing = attachToGroupKey
+          ? groupByRestaurant(latestRatings).find((r) => r.groupKey === attachToGroupKey)
+          : null;
+        if (!existing) return addRating(latestRatings, rating);
+        const restaurantId = existing.visits.find((v) => v.restaurant_id)?.restaurant_id || generateId();
+        const linked = mergeRestaurantGroups(latestRatings, new Set([attachToGroupKey]), restaurantId);
+        return addRating(linked, { ...rating, restaurant_id: restaurantId });
+      },
+      {
+        message: isWishlist ? `Add ${rating.name || "restaurant"} to wishlist` : `Add rating for ${rating.name || "restaurant"}`,
+      }
+    );
+    els.ratingForm.reset();
+    els.ratingPicker.dataset.value = "0";
+    els.pricePicker.dataset.value = "0";
+    els.visitedFieldsContainer.hidden = false;
+    formTags = [];
+    initPickers();
+    refreshList();
+    setStatus(els.statusMessage, isWishlist ? "Added to wishlist." : "Rating saved.");
+  } catch (err) {
+    setStatus(els.statusMessage, describeError(err, "Failed to save rating"), true);
+  }
+}
+
 function initRatingForm() {
   els.ratingForm.addEventListener("submit", async (e) => {
     e.preventDefault();
+    hideDuplicateWarning();
 
     if (!hasCompleteSettings()) {
       setStatus(els.statusMessage, "Set your data repo and token in Settings before adding a rating.", true);
       return;
     }
 
-    const isWishlist = els.wishlistCheckbox.checked;
-    const rating = {
-      id: generateId(),
-      name: els.nameInput.value.trim(),
-      google_maps_url: els.mapsUrlInput.value.trim(),
-      status: isWishlist ? "wishlist" : "visited",
-      rating: isWishlist ? null : Number(els.ratingPicker.dataset.value || 0),
-      price_level: isWishlist ? null : Number(els.pricePicker.dataset.value || 0),
-      comment: isWishlist ? "" : els.commentInput.value.trim(),
-      tags: formTags,
-      visited_at: isWishlist ? null : els.visitedAtInput.value || new Date().toISOString().slice(0, 10),
-      created_by: currentUser || "unknown",
-      created_at: new Date().toISOString(),
-    };
-
-    setStatus(els.statusMessage, isWishlist ? "Saving to wishlist…" : "Saving rating…");
-    try {
-      await writeWithConflictRetry((latestRatings) => addRating(latestRatings, rating), {
-        message: isWishlist ? `Add ${rating.name || "restaurant"} to wishlist` : `Add rating for ${rating.name || "restaurant"}`,
-      });
-      els.ratingForm.reset();
-      els.ratingPicker.dataset.value = "0";
-      els.pricePicker.dataset.value = "0";
-      els.visitedFieldsContainer.hidden = false;
-      formTags = [];
-      initPickers();
-      refreshList();
-      setStatus(els.statusMessage, isWishlist ? "Added to wishlist." : "Rating saved.");
-    } catch (err) {
-      setStatus(els.statusMessage, describeError(err, "Failed to save rating"), true);
+    const rating = buildRatingFromForm();
+    const matches = createMatcher(groupByRestaurant(state.ratings))(rating);
+    if (matches.length > 0) {
+      showDuplicateWarning(matches);
+      return;
     }
+    await saveNewRating(rating, null);
   });
 }
 
@@ -636,6 +773,7 @@ async function init() {
   initViewToggle();
   initBulkDelete();
   initBulkMerge();
+  initListFilters();
   refreshList();
   if (!hasCompleteSettings()) {
     setStatus(els.statusMessage, "Set your data repo and token in Settings to sync ratings.");

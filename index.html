@@ -128,6 +128,7 @@
         <input type="date" id="field-visited-at" />
       </label>
     </div>
+    <div id="duplicate-warning" class="duplicate-warning" hidden></div>
     <div class="form-actions">
       <button type="submit">Save rating</button>
     </div>
@@ -137,7 +138,7 @@
 <section id="list-panel" class="panel">
   <div class="list-header">
     <h2>Restaurants</h2>
-    <div class="view-toggle" role="tablist">
+    <div class="view-toggle" id="view-toggle" role="tablist">
       <button type="button" id="btn-view-visited" class="toggle-btn active" aria-pressed="true">Rated</button>
       <button type="button" id="btn-view-wishlist" class="toggle-btn" aria-pressed="false">Wishlist</button>
     </div>
@@ -160,9 +161,14 @@
         </select>
       </label>
     </div>
+    <label class="checkbox-label">
+      <input type="checkbox" id="show-duplicates" />
+      Show possible duplicates
+    </label>
     <button type="button" id="btn-merge-selected" hidden></button>
     <button type="button" id="btn-delete-selected" hidden></button>
   </div>
+  <input type="search" id="name-search" class="name-search" placeholder="Search by name" autocomplete="off" />
   <div id="status-message" class="hint"></div>
   <table id="restaurant-table">
     <thead>

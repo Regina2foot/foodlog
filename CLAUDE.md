@@ -200,6 +200,10 @@ extensions are easy, rather than requiring larger rewrites.
   - `history.js` — grouping visits per restaurant, rendering the
     restaurant detail view and the rating/price-over-time chart (plain
     SVG, no charting library)
+  - `duplicates.js` — place-ID extraction and name matching for duplicate
+    detection (added later, Section 9)
+  - `googleImport.js`, `settings.js` — Google Takeout import parsing;
+    local settings storage + data-repo input parsing (added later)
   - `app.js` — wires the modules together, event handling, entry point
 - **Prefer small, "pure" functions** (input → output, no hidden side
   effects), especially for sorting, validation, and CSV logic. This keeps
@@ -310,7 +314,35 @@ below) — see Section 9 for how the list and detail view use this.
   (rating, price level, comment). Sortable by stars, name, date — sorting
   uses each restaurant's latest visit. A Rated/Wishlist toggle switches
   the view (`status`, Section 8); Wishlist rows show tags/date-added
-  columns instead and can be filtered down to one tag at a time
+  columns instead and can be filtered down to one tag at a time. A whole
+  restaurant (not each entry) is classified: it's in Rated once any of its
+  visits is rated, and only in Wishlist while all its entries are
+  wishlist entries — so a wishlist entry merged with or attached to a
+  rated visit doesn't linger in the Wishlist tab
+- **Name search**: a search box above the list filters by restaurant name
+  (any visit's name), ignoring case and accents; works in Rated, Wishlist
+  and the duplicates view
+- **Duplicate detection** (`js/duplicates.js`, pure functions). Two
+  strengths of match:
+  - *same place*: identical Maps link, or the same Google place ID
+    embedded in two different long links (`!1s0x…:0x…`, `ftid=`, or
+    `?cid=` — all normalized to the CID). Reliable
+  - *similar name*: names equal, or one a whole-word prefix of the other
+    (≥5 chars), ignoring case/accents/punctuation — e.g. "Suigyo Izakaya"
+    vs. "Suigyo Izakaya - Japanisches Restaurant …". Only a hint. Not used
+    when both sides have place IDs that differ (e.g. two branches of a
+    chain)
+  - Short share links (`maps.app.goo.gl/…`) carry no place ID and can't
+    be resolved without contacting Google (Section 3.1), so they can only
+    match by name
+  - **On create**: if the new entry matches an existing restaurant, the
+    form shows a warning with: add it as another visit to that restaurant
+    (links them via a shared `restaurant_id`, same mechanism as Merge),
+    save it separately, or cancel
+  - **"Show possible duplicates"** switch: the list shows only suspected
+    duplicates (across both Rated and Wishlist), grouped next to each
+    other; clean up with the existing checkboxes + Merge/Delete selected.
+    No "not a duplicate" memory — dismissing isn't persisted
 - **Bulk select**: a checkbox per row plus "select all visible", in both
   the Rated and Wishlist views
   - **Delete selected**: removes every checked restaurant *and all of its
@@ -399,7 +431,8 @@ pick (Section 2.1).
   snapshot in the repo (defense in depth, in addition to the Git history)
 - [x] Filter by tag — built, but **Wishlist view only** so far (a
       dropdown of that view's distinct tags). Not done: the same for the
-      Rated view, or filtering/searching by name
+      Rated view
+- [x] Search by name — built (Section 9), all views
 - [x] Decided: no separate category field — tags double as categories
       (e.g. bulk-tagging a Google Maps import as "Gregors
       recommendations", Section 11.3), see Section 8
@@ -421,8 +454,11 @@ pick (Section 2.1).
       (including the "N/10") is kept as-is in the comment field, never
       rewritten. The export has no real visit date, so a rated entry's
       `visited_at` is set to the import date instead (a wishlist entry's
-      stays null — it hasn't been visited). Duplicate `google_maps_url`s
-      already in the data are skipped. The import panel has an optional
+      stays null — it hasn't been visited). Places already in the data as
+      the *same place* (identical link or same Google place ID, Section 9)
+      are skipped; places that only have a *similar name* to an existing
+      restaurant are imported anyway but listed in the confirmation, to be
+      reviewed afterwards with "Show possible duplicates". The import panel has an optional
       "tag these imports with" field (e.g. "Gregors recommendations" for
       a friend's list) applied to every entry from that file — this is
       the category mechanism from Section 8, not a separate feature.
@@ -464,8 +500,10 @@ pick (Section 2.1).
 - No framework, plain vanilla JS, split into ES modules (Section 6)
 - A single JSON array as the "database", no separate file per entry
 - Repeat visits to the same restaurant are grouped by an exact match on
-  `google_maps_url`; if the same place ever gets pasted with a slightly
-  different link, it would show up as a separate restaurant
+  `google_maps_url` (or a shared `restaurant_id`); if the same place gets
+  pasted with a different link, it shows up as a separate restaurant
+  until merged — duplicate detection (Section 9) flags these but never
+  merges automatically
 - The rating/price history chart is a hand-rolled SVG, not an external
   charting library, to avoid adding a new dependency (Section 4.1) — can
   revisit if that turns out to be too limiting

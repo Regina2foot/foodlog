@@ -168,14 +168,14 @@ export function parseGoogleMapsExport(text) {
 }
 
 // Converts generic parsed entries into ratings.json-shaped objects, skipping
-// any whose google_maps_url already exists (no duplicate restaurants on a
-// repeat import).
-export function buildRatingsFromImport(entries, { createdBy, existingUrls, generateId }) {
+// any the caller already knows as the same Google place (`isKnownPlace(url)`
+// — see duplicates.js), so a repeat or overlapping import adds no duplicates.
+export function buildRatingsFromImport(entries, { createdBy, isKnownPlace, generateId }) {
   const toAdd = [];
   let skippedDuplicates = 0;
 
   for (const entry of entries) {
-    if (entry.google_maps_url && existingUrls.has(entry.google_maps_url)) {
+    if (entry.google_maps_url && isKnownPlace(entry.google_maps_url)) {
       skippedDuplicates++;
       continue;
     }

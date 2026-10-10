@@ -70,6 +70,8 @@ Plain HTML/CSS/JavaScript, split into ES modules under `js/`:
 - `maps.js` – Google Maps link handling and validation
 - `history.js` – restaurant detail view, visit history, rating/price chart
 - `settings.js` – local (localStorage) runtime settings
+- `googleImport.js` – Google Takeout CSV import
+- `duplicates.js` – duplicate detection (same Google place / similar name)
 - `app.js` – wires the modules together, event handling, entry point
 
 See `CLAUDE.md` for the full project context, data model, and the

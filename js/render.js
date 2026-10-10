@@ -169,14 +169,26 @@ export function renderListHeader(headerRow, mode = "visited", onToggleSelectAll,
 // `mode` ("visited" | "wishlist") selects which columns to show.
 // `onToggleSelect(groupKey, checked)` fires from each row's checkbox;
 // `selectedKeys` (a Set of groupKeys) sets each checkbox's initial state.
-export function renderRestaurantList(tbody, restaurants, onRowClick, mode = "visited", onToggleSelect, selectedKeys) {
+// Options: `groupStartKeys` marks rows that start a new duplicate group
+// (drawn with a separator); `emptyMessage` overrides the empty-list text.
+export function renderRestaurantList(
+  tbody,
+  restaurants,
+  onRowClick,
+  mode = "visited",
+  onToggleSelect,
+  selectedKeys,
+  { groupStartKeys = new Set(), emptyMessage } = {}
+) {
   tbody.textContent = "";
 
   if (restaurants.length === 0) {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
     cell.colSpan = mode === "wishlist" ? WISHLIST_COLUMNS.length : VISITED_COLUMNS.length;
-    cell.textContent = mode === "wishlist" ? "Wishlist is empty." : "No ratings yet.";
+    cell.textContent =
+      emptyMessage ||
+      (mode === "wishlist" ? "Wishlist is empty." : mode === "duplicates" ? "No possible duplicates found." : "No ratings yet.");
     row.appendChild(cell);
     tbody.appendChild(row);
     return;
@@ -185,6 +197,7 @@ export function renderRestaurantList(tbody, restaurants, onRowClick, mode = "vis
   for (const restaurant of restaurants) {
     const row = document.createElement("tr");
     row.tabIndex = 0;
+    if (groupStartKeys.has(restaurant.groupKey)) row.classList.add("dup-group-start");
 
     const selectCell = document.createElement("td");
     const checkbox = document.createElement("input");

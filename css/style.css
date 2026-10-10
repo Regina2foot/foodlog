@@ -266,3 +266,34 @@ tbody tr:hover {
 .chart-container {
   margin: 1rem 0;
 }
+
+.name-search {
+  display: block;
+  width: 100%;
+  margin-top: 0.75rem;
+  padding: 0.4rem;
+  font-size: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+}
+
+.duplicate-warning {
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.duplicate-warning p {
+  margin-top: 0;
+}
+
+.duplicate-actions {
+  flex-wrap: wrap;
+}
+
+#restaurant-table tr.dup-group-start td {
+  border-top: 2px solid var(--accent);
+}
