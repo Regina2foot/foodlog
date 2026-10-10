@@ -83,6 +83,26 @@ export function mergeRestaurantGroups(ratings, groupKeys, newRestaurantId) {
   );
 }
 
+// Records that the given restaurants are all different from each other:
+// for each pair, the first restaurant's latest entry gets the other's entry
+// ids in `not_same_as` (CLAUDE.md Section 8). Read by duplicates.js.
+export function markRestaurantsDifferent(ratings, groupKeys) {
+  const keys = groupKeys instanceof Set ? groupKeys : new Set(groupKeys);
+  const selected = groupByRestaurant(ratings).filter((r) => keys.has(r.groupKey));
+  const additions = new Map();
+  for (let i = 0; i < selected.length; i++) {
+    for (let j = i + 1; j < selected.length; j++) {
+      const holderId = selected[i].visits[0].id;
+      if (!additions.has(holderId)) additions.set(holderId, new Set());
+      for (const v of selected[j].visits) additions.get(holderId).add(v.id);
+    }
+  }
+  return ratings.map((r) => {
+    const add = additions.get(r.id);
+    return add ? { ...r, not_same_as: [...new Set([...(r.not_same_as || []), ...add])] } : r;
+  });
+}
+
 export function generateId() {
   return crypto.randomUUID().slice(0, 8);
 }

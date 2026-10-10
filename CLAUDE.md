@@ -293,6 +293,13 @@ below) — see Section 9 for how the list and detail view use this.
   so each visit's own URL stays exactly as it was. Lets link-less or
   differently-linked entries that are actually the same restaurant be
   grouped together manually
+- `not_same_as`: optional, usually absent. A list of other entries' `id`s
+  that the user has said belong to a *different* restaurant (via "Not the
+  same", "Save separately", or "Different" in the import review). Two
+  restaurants are never suggested as duplicates if any entry of one lists
+  any entry of the other. Entry ids never change (not even on merge), so
+  this survives merges; deleting the entry that carries the note can make
+  the pair come up again
 - `tags`: optional, empty array if not set. Free-form, multiple per
   entry. Also doubles as a lightweight "category" mechanism — e.g.
   bulk-tagging an entire Google Maps import as "Gregors recommendations"
@@ -327,22 +334,29 @@ below) — see Section 9 for how the list and detail view use this.
   - *same place*: identical Maps link, or the same Google place ID
     embedded in two different long links (`!1s0x…:0x…`, `ftid=`, or
     `?cid=` — all normalized to the CID). Reliable
-  - *similar name*: names equal, or one a whole-word prefix of the other
-    (≥5 chars), ignoring case/accents/punctuation — e.g. "Suigyo Izakaya"
-    vs. "Suigyo Izakaya - Japanisches Restaurant …". Only a hint. Not used
-    when both sides have place IDs that differ (e.g. two branches of a
-    chain)
+  - *similar name*: compares the important words, ignoring
+    case/accents/punctuation/apostrophes and generic words (Restaurant,
+    Café, Bar, Pizzeria, Trattoria, …): every important word of the
+    shorter name must appear in the other, in any order, with a small
+    typo tolerated in longer words (1 edit from 5 letters, 2 from 8);
+    fewer than 4 important letters never matches. Catches e.g. "Suigyo
+    Izakaya" vs. "Suigyo Izakaya - Japanisches Restaurant …", "Restaurant
+    Toscana" vs. "Toscana", "Trattoria Milano" vs. "Milano Trattoria".
+    Only a hint. Not used when both sides have place IDs that differ
+    (e.g. two branches of a chain)
+  - Pairs the user marked as different (`not_same_as`, Section 8) are
+    never suggested again
   - Short share links (`maps.app.goo.gl/…`) carry no place ID and can't
     be resolved without contacting Google (Section 3.1), so they can only
     match by name
   - **On create**: if the new entry matches an existing restaurant, the
     form shows a warning with: add it as another visit to that restaurant
     (links them via a shared `restaurant_id`, same mechanism as Merge),
-    save it separately, or cancel
+    save it separately (remembered as different), or cancel
   - **"Show possible duplicates"** switch: the list shows only suspected
     duplicates (across both Rated and Wishlist), grouped next to each
-    other; clean up with the existing checkboxes + Merge/Delete selected.
-    No "not a duplicate" memory — dismissing isn't persisted
+    other; clean up with the existing checkboxes + Merge/Delete selected,
+    or **"Not the same"** (2+ ticked rows) to remember them as different
 - **Bulk select**: a checkbox per row plus "select all visible", in both
   the Rated and Wishlist views
   - **Delete selected**: removes every checked restaurant *and all of its
@@ -457,8 +471,14 @@ pick (Section 2.1).
       stays null — it hasn't been visited). Places already in the data as
       the *same place* (identical link or same Google place ID, Section 9)
       are skipped; places that only have a *similar name* to an existing
-      restaurant are imported anyway but listed in the confirmation, to be
-      reviewed afterwards with "Show possible duplicates". The import panel has an optional
+      restaurant go through a review step before anything is saved: one
+      question each, "Same as …" or "Different", all must be answered.
+      "Same": the existing restaurant's entries without a Maps link get
+      the imported link (so later imports recognise it exactly), they get
+      the import's tag, and only if the imported place carries its own
+      rating is it added as another visit (linked via `restaurant_id`).
+      "Different": imported as a new restaurant, remembered via
+      `not_same_as`. The import panel has an optional
       "tag these imports with" field (e.g. "Gregors recommendations" for
       a friend's list) applied to every entry from that file — this is
       the category mechanism from Section 8, not a separate feature.

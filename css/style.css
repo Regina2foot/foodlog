@@ -297,3 +297,19 @@ tbody tr:hover {
 #restaurant-table tr.dup-group-start td {
   border-top: 2px solid var(--accent);
 }
+
+.review-item {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin: 0 0 0.5rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.review-item legend {
+  font-weight: 600;
+  padding: 0 0.25rem;
+}
+
+.review-item .checkbox-label {
+  margin: 0.25rem 0;
+}

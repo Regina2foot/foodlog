@@ -1,4 +1,4 @@
-import { createEmptyState, groupByRestaurant, addRating, updateRating, removeRating, removeRestaurantGroups, mergeRestaurantGroups, generateId } from "./state.js";
+import { createEmptyState, groupByRestaurant, addRating, updateRating, removeRating, removeRestaurantGroups, mergeRestaurantGroups, markRestaurantsDifferent, generateId } from "./state.js";
 import { sortRestaurants } from "./sort.js";
 import { renderRestaurantList, renderListHeader, renderStarPicker, renderPricePicker, renderTagPicker, setStatus } from "./render.js";
 import { getSettings, saveSettings, removeToken, hasCompleteSettings, parseRepoInput } from "./settings.js";
@@ -6,7 +6,7 @@ import { fetchRatings, saveRatings, fetchCurrentUser, GitHubApiError } from "./a
 import { renderRestaurantDetail } from "./history.js";
 import { openMapsUrl, extractNameFromMapsUrl } from "./maps.js";
 import { ratingsToCsv, downloadCsv } from "./csv.js";
-import { decodeImportFile, parseGoogleMapsExport, buildRatingsFromImport } from "./googleImport.js";
+import { decodeImportFile, parseGoogleMapsExport, buildRatingsFromImport, applyImport } from "./googleImport.js";
 import { extractPlaceKey, normalizeName, createMatcher, findDuplicateGroups } from "./duplicates.js";
 
 const state = createEmptyState();
@@ -142,6 +142,8 @@ const els = {
   showDuplicatesCheckbox: document.getElementById("show-duplicates"),
   nameSearchInput: document.getElementById("name-search"),
   duplicateWarning: document.getElementById("duplicate-warning"),
+  notSameButton: document.getElementById("btn-not-same"),
+  importReview: document.getElementById("import-review"),
 };
 
 function hasVisitedVisit(restaurant) {
@@ -266,6 +268,8 @@ function updateBulkActionButtons() {
   els.deleteSelectedButton.textContent = `Delete selected (${count})`;
   els.mergeSelectedButton.hidden = count < 2;
   els.mergeSelectedButton.textContent = `Merge selected (${count})`;
+  els.notSameButton.hidden = !showDuplicates || count < 2;
+  els.notSameButton.textContent = `Not the same (${count})`;
 }
 
 function findRestaurant(groupKey) {
@@ -378,6 +382,30 @@ function initListFilters() {
   });
 }
 
+function initBulkNotSame() {
+  els.notSameButton.addEventListener("click", async () => {
+    const count = selectedGroupKeys.size;
+    if (count < 2) return;
+    const confirmed = confirm(
+      `Mark the ${count} selected restaurants as different from each other? They won't be suggested as duplicates of each other again.`
+    );
+    if (!confirmed) return;
+
+    const keys = new Set(selectedGroupKeys);
+    setStatus(els.statusMessage, "Saving…");
+    try {
+      await writeWithConflictRetry((latestRatings) => markRestaurantsDifferent(latestRatings, keys), {
+        message: `Mark ${count} restaurants as not duplicates`,
+      });
+      selectedGroupKeys.clear();
+      refreshList();
+      setStatus(els.statusMessage, `Marked ${count} restaurants as different.`);
+    } catch (err) {
+      setStatus(els.statusMessage, describeError(err, "Failed to save"), true);
+    }
+  });
+}
+
 function initBulkDelete() {
   els.deleteSelectedButton.addEventListener("click", async () => {
     const count = selectedGroupKeys.size;
@@ -436,6 +464,117 @@ function initWishlistToggle() {
   });
 }
 
+async function runImport(plan, bulkTag) {
+  const newCount = plan.filter((p) => p.decision !== "same").length;
+  const sameCount = plan.length - newCount;
+  setStatus(els.importStatus, "Importing…");
+  try {
+    await writeWithConflictRetry((latestRatings) => applyImport(latestRatings, plan, { bulkTag, generateId }), {
+      message: `Import ${plan.length} place(s) from Google Maps`,
+    });
+    hideImportReview();
+    els.importTagInput.value = "";
+    refreshList();
+    setStatus(
+      els.importStatus,
+      `Imported ${newCount} new restaurant(s)` +
+        (sameCount > 0 ? `; ${sameCount} matched to restaurants you already had.` : ".")
+    );
+  } catch (err) {
+    setStatus(els.importStatus, describeError(err, "Import failed"), true);
+  }
+}
+
+function hideImportReview() {
+  els.importReview.hidden = true;
+  els.importReview.textContent = "";
+}
+
+// One question per imported place with a similar-name match: "same as
+// <existing>" (one option per candidate) or "different". Nothing is saved
+// until every question is answered and Import is clicked.
+function showImportReview(items, summary, bulkTag) {
+  const box = els.importReview;
+  box.textContent = "";
+  const reviewed = items.filter((i) => i.matches.length > 0);
+
+  const intro = document.createElement("p");
+  intro.textContent = `${summary} ${reviewed.length} have a similar name to a restaurant already in your list — is each the same restaurant?`;
+  box.appendChild(intro);
+
+  const answers = new Map(); // item -> candidate index, or "different"
+  const progress = document.createElement("p");
+  progress.className = "hint";
+  const importButton = document.createElement("button");
+  importButton.type = "button";
+  const updateProgress = () => {
+    progress.textContent = `${answers.size} of ${reviewed.length} answered.`;
+    importButton.disabled = answers.size < reviewed.length;
+    importButton.textContent = `Import ${items.length} place(s)`;
+  };
+
+  reviewed.forEach((item, index) => {
+    const fieldset = document.createElement("fieldset");
+    fieldset.className = "review-item";
+    const legend = document.createElement("legend");
+    legend.textContent = `"${item.rating.name}" from the file`;
+    fieldset.appendChild(legend);
+
+    const addOption = (labelText, value) => {
+      const label = document.createElement("label");
+      label.className = "checkbox-label";
+      const radio = document.createElement("input");
+      radio.type = "radio";
+      radio.name = `import-review-${index}`;
+      radio.addEventListener("change", () => {
+        answers.set(item, value);
+        updateProgress();
+      });
+      label.append(radio, document.createTextNode(labelText));
+      fieldset.appendChild(label);
+    };
+    item.matches.slice(0, MAX_SHOWN_MATCHES).forEach((m, i) => addOption(`Same as "${m.restaurant.name}"`, i));
+    addOption("Different restaurant", "different");
+    box.appendChild(fieldset);
+  });
+
+  importButton.addEventListener("click", () => {
+    const plan = items.map((item) => {
+      if (item.matches.length === 0) return { rating: item.rating, decision: "add" };
+      const answer = answers.get(item);
+      const shown = item.matches.slice(0, MAX_SHOWN_MATCHES);
+      if (answer === "different") {
+        return {
+          rating: item.rating,
+          decision: "add",
+          matchIds: shown.flatMap((m) => m.restaurant.visits.map((v) => v.id)),
+        };
+      }
+      return {
+        rating: item.rating,
+        decision: "same",
+        matchIds: shown[answer].restaurant.visits.map((v) => v.id),
+      };
+    });
+    runImport(plan, bulkTag);
+  });
+
+  const cancelButton = document.createElement("button");
+  cancelButton.type = "button";
+  cancelButton.textContent = "Cancel import";
+  cancelButton.addEventListener("click", () => {
+    hideImportReview();
+    setStatus(els.importStatus, "Import cancelled.");
+  });
+
+  const actions = document.createElement("div");
+  actions.className = "form-actions";
+  actions.append(importButton, cancelButton);
+  box.append(progress, actions);
+  updateProgress();
+  box.hidden = false;
+}
+
 function initImport() {
   els.toggleImportButton.addEventListener("click", () => {
     els.importPanel.hidden = !els.importPanel.hidden;
@@ -444,6 +583,7 @@ function initImport() {
   els.importFileInput.addEventListener("change", async () => {
     const file = els.importFileInput.files[0];
     if (!file) return;
+    hideImportReview();
 
     if (!els.importTagInput.value.trim()) {
       els.importTagInput.value = file.name.replace(/\.csv$/i, "");
@@ -493,39 +633,27 @@ function initImport() {
       }
 
       // Same-place matches were already skipped above; anything still
-      // matching is a name-only similarity — imported, but called out.
+      // matching is a similar-name match, which gets reviewed before saving.
       const matchExisting = createMatcher(groupByRestaurant(state.ratings));
-      const nameSimilar = toAdd.filter((r) => matchExisting(r).length > 0);
-      const nameSimilarNote =
-        nameSimilar.length > 0
-          ? `${nameSimilar.length} have a similar name to restaurants you already have (e.g. ${nameSimilar
-              .slice(0, 3)
-              .map((r) => `"${r.name}"`)
-              .join(", ")}). They'll be imported — check them afterwards with "Show possible duplicates".\n`
-          : "";
+      const items = toAdd.map((rating) => ({ rating, matches: matchExisting(rating) }));
 
       const visitedCount = toAdd.filter((r) => r.status === "visited").length;
-      const wishlistCount = toAdd.length - visitedCount;
-      const confirmed = confirm(
-        `Found ${entries.length} place(s) in the file.\n` +
-          `${visitedCount} will be imported as rated visits, ${wishlistCount} as wishlist entries.\n` +
-          (skippedDuplicates > 0 ? `${skippedDuplicates} already in your list (same Google Maps place) will be skipped.\n` : "") +
-          nameSimilarNote +
-          (bulkTag ? `All will be tagged "${bulkTag}".\n` : "") +
-          `\nImport ${toAdd.length} new entr${toAdd.length === 1 ? "y" : "ies"}?`
-      );
-      if (!confirmed) {
-        setStatus(els.importStatus, "Import cancelled.");
+      const summary =
+        `Found ${entries.length} place(s) in the file: ${visitedCount} rated, ${toAdd.length - visitedCount} wishlist.` +
+        (skippedDuplicates > 0 ? ` ${skippedDuplicates} already in your list (same Google Maps place) will be skipped.` : "") +
+        (bulkTag ? ` All will be tagged "${bulkTag}".` : "");
+
+      if (items.some((i) => i.matches.length > 0)) {
+        showImportReview(items, summary, bulkTag);
+        setStatus(els.importStatus, "");
         return;
       }
 
-      setStatus(els.importStatus, `Importing ${toAdd.length} entries…`);
-      await writeWithConflictRetry((latestRatings) => [...latestRatings, ...toAdd], {
-        message: `Import ${toAdd.length} place(s) from Google Maps`,
-      });
-      els.importTagInput.value = "";
-      refreshList();
-      setStatus(els.importStatus, `Imported ${toAdd.length} entries (${visitedCount} rated, ${wishlistCount} wishlist).`);
+      if (!confirm(`${summary}\n\nImport ${toAdd.length} new entr${toAdd.length === 1 ? "y" : "ies"}?`)) {
+        setStatus(els.importStatus, "Import cancelled.");
+        return;
+      }
+      await runImport(items.map(({ rating }) => ({ rating, decision: "add" })), bulkTag);
     } catch (err) {
       setStatus(els.importStatus, describeError(err, "Import failed"), true);
     } finally {
@@ -657,7 +785,9 @@ function showDuplicateWarning(matches) {
   const separate = document.createElement("button");
   separate.type = "button";
   separate.textContent = "Save separately";
-  separate.addEventListener("click", () => saveNewRating(buildRatingFromForm(), null));
+  // Remembered (not_same_as), so these pairs aren't flagged again later.
+  const matchedIds = matches.flatMap((m) => m.restaurant.visits.map((v) => v.id));
+  separate.addEventListener("click", () => saveNewRating({ ...buildRatingFromForm(), not_same_as: matchedIds }, null));
   const cancel = document.createElement("button");
   cancel.type = "button";
   cancel.textContent = "Cancel";
@@ -773,6 +903,7 @@ async function init() {
   initViewToggle();
   initBulkDelete();
   initBulkMerge();
+  initBulkNotSame();
   initListFilters();
   refreshList();
   if (!hasCompleteSettings()) {

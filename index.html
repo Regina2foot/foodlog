@@ -57,6 +57,7 @@
   </p>
   <input type="file" id="import-file-input" accept=".csv,text/csv" />
   <p id="import-status" class="hint"></p>
+  <div id="import-review" hidden></div>
 </section>
 
 <section id="settings-panel" class="panel" hidden>
@@ -166,6 +167,7 @@
       Show possible duplicates
     </label>
     <button type="button" id="btn-merge-selected" hidden></button>
+    <button type="button" id="btn-not-same" hidden></button>
     <button type="button" id="btn-delete-selected" hidden></button>
   </div>
   <input type="search" id="name-search" class="name-search" placeholder="Search by name" autocomplete="off" />

@@ -201,3 +201,35 @@ export function buildRatingsFromImport(entries, { createdBy, isKnownPlace, gener
 
   return { toAdd, skippedDuplicates };
 }
+
+// Applies an import to `ratings` once similar-name matches have been
+// reviewed. Each item: { rating, decision: "add" | "same", matchIds }.
+// - "add": imported as a new restaurant. If it was reviewed as different
+//   from existing ones (matchIds set), that's remembered via not_same_as.
+// - "same": matchIds are the existing restaurant's entry ids. Those without
+//   a Maps link get the imported one; `bulkTag` is added to them; and only
+//   if the imported place carries its own rating is it added as another
+//   visit, linked through a shared restaurant_id.
+// Ids that no longer exist (deleted meanwhile) fall back to "add".
+export function applyImport(ratings, items, { bulkTag, generateId }) {
+  let next = [...ratings];
+  for (const { rating, decision, matchIds = [] } of items) {
+    const existing = next.filter((r) => matchIds.includes(r.id));
+    if (decision !== "same" || existing.length === 0) {
+      next.push(matchIds.length > 0 ? { ...rating, not_same_as: [...matchIds] } : rating);
+      continue;
+    }
+    const addVisit = rating.status === "visited";
+    const restaurantId = addVisit ? existing.find((r) => r.restaurant_id)?.restaurant_id || generateId() : null;
+    next = next.map((r) => {
+      if (!matchIds.includes(r.id)) return r;
+      const updated = { ...r };
+      if (!updated.google_maps_url && rating.google_maps_url) updated.google_maps_url = rating.google_maps_url;
+      if (restaurantId && !updated.restaurant_id) updated.restaurant_id = restaurantId;
+      if (bulkTag && !(updated.tags || []).includes(bulkTag)) updated.tags = [...(updated.tags || []), bulkTag];
+      return updated;
+    });
+    if (addVisit) next.push({ ...rating, restaurant_id: restaurantId });
+  }
+  return next;
+}

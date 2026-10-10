@@ -32,38 +32,78 @@ export function normalizeName(name) {
     .toLowerCase()
     .replace(/ß/g, "ss")
     .replace(/&/g, " and ")
+    .replace(/['’‘`´]/g, "")
     .replace(/[^\p{L}\p{N}]+/gu, " ")
     .trim();
 }
 
-// Shorter name must be a whole-word prefix of the longer one (Google often
-// appends a description: "Suigyo Izakaya - Japanisches Restaurant ...").
-const MIN_PREFIX_LENGTH = 5;
+// Generic words that say what kind of place it is rather than which one;
+// ignored so "Restaurant Toscana" matches "Toscana".
+const FILLER_WORDS = new Set([
+  "restaurant", "restaurante", "ristorante", "cafe", "caffe", "coffee", "bar",
+  "bistro", "pizzeria", "trattoria", "osteria", "taverna", "kitchen", "grill",
+  "imbiss", "the", "and", "und", "la", "le", "les", "il", "lo", "el", "der",
+  "die", "das", "de", "di", "da", "del", "du", "zum", "zur", "im", "am",
+]);
 
-function normalizedNamesMatch(a, b) {
-  if (!a || !b) return false;
+// Fewer letters than this in the shorter name's important words: too
+// little to go on (e.g. "Bao"), no name match.
+const MIN_SIGNIFICANT_LETTERS = 4;
+
+export function significantWords(normalizedName) {
+  return [...new Set(normalizedName.split(" ").filter((w) => w && !FILLER_WORDS.has(w)))];
+}
+
+function editDistance(a, b) {
+  const prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    let diag = prev[0];
+    prev[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const up = prev[j];
+      prev[j] = Math.min(prev[j] + 1, prev[j - 1] + 1, diag + (a[i - 1] === b[j - 1] ? 0 : 1));
+      diag = up;
+    }
+  }
+  return prev[b.length];
+}
+
+// Equal, or a small typo in a longer word (1 edit from 5 letters, 2 from 8).
+function wordsMatch(a, b) {
   if (a === b) return true;
-  const [short, long] = a.length <= b.length ? [a, b] : [b, a];
-  return short.length >= MIN_PREFIX_LENGTH && long.startsWith(short + " ");
+  const shorter = Math.min(a.length, b.length);
+  if (shorter < 5) return false;
+  return editDistance(a, b) <= (shorter >= 8 ? 2 : 1);
+}
+
+// Every important word of the shorter name appears (in any order, typos
+// tolerated) in the longer one — covers Google's appended descriptions
+// ("Suigyo Izakaya - Japanisches Restaurant ..."), reordered words and
+// generic prefixes.
+function wordSetsMatch(a, b) {
+  if (a.length === 0 || b.length === 0) return false;
+  const [small, large] = a.length <= b.length ? [a, b] : [b, a];
+  if (small.join("").length < MIN_SIGNIFICANT_LETTERS) return false;
+  return small.every((w) => large.some((x) => wordsMatch(w, x)));
 }
 
 export function namesMatch(a, b) {
-  return normalizedNamesMatch(normalizeName(a), normalizeName(b));
+  return wordSetsMatch(significantWords(normalizeName(a)), significantWords(normalizeName(b)));
 }
 
 function profileOf(visits) {
   const urls = new Set();
   const placeKeys = new Set();
-  const names = new Set();
+  const wordSets = new Map();
   for (const v of visits) {
     const url = (v.google_maps_url || "").trim();
     if (url) urls.add(url);
     const key = extractPlaceKey(url);
     if (key) placeKeys.add(key);
-    const name = normalizeName(v.name);
-    if (name) names.add(name);
+    const words = significantWords(normalizeName(v.name));
+    if (words.length) wordSets.set(words.join(" "), words);
   }
-  return { urls, placeKeys, names: [...names] };
+  return { urls, placeKeys, wordSets: [...wordSets.values()] };
 }
 
 function compareProfiles(p, q) {
@@ -72,12 +112,32 @@ function compareProfiles(p, q) {
   // Both point at known places, and they're different ones: e.g. two
   // branches of a chain. Same name doesn't make them duplicates.
   if (p.placeKeys.size > 0 && q.placeKeys.size > 0) return null;
-  for (const a of p.names) {
-    for (const b of q.names) {
-      if (normalizedNamesMatch(a, b)) return "name";
+  for (const a of p.wordSets) {
+    for (const b of q.wordSets) {
+      if (wordSetsMatch(a, b)) return "name";
     }
   }
   return null;
+}
+
+// "Not the same restaurant" decisions are stored on entries as
+// `not_same_as: [entry ids]` (CLAUDE.md Section 8). Two restaurants count
+// as dismissed if any entry of one names any entry of the other.
+const pairKey = (a, b) => (a < b ? `${a}|${b}` : `${b}|${a}`);
+
+function notSamePairs(restaurants) {
+  const pairs = new Set();
+  for (const r of restaurants) {
+    for (const v of r.visits) {
+      for (const other of v.not_same_as || []) pairs.add(pairKey(v.id, other));
+    }
+  }
+  return pairs;
+}
+
+function markedDifferent(a, b, pairs) {
+  if (pairs.size === 0) return false;
+  return a.visits.some((v) => b.visits.some((w) => pairs.has(pairKey(v.id, w.id))));
 }
 
 // Returns (entry) => [{ restaurant, reason }], "place" matches first.
@@ -100,12 +160,13 @@ export function createMatcher(restaurants) {
 // each sorted by name, groups ordered by their first name.
 export function findDuplicateGroups(restaurants) {
   const profiles = restaurants.map((r) => profileOf(r.visits));
+  const dismissed = notSamePairs(restaurants);
   const parent = restaurants.map((_, i) => i);
   const find = (i) => (parent[i] === i ? i : (parent[i] = find(parent[i])));
 
   for (let i = 0; i < restaurants.length; i++) {
     for (let j = i + 1; j < restaurants.length; j++) {
-      if (compareProfiles(profiles[i], profiles[j])) {
+      if (compareProfiles(profiles[i], profiles[j]) && !markedDifferent(restaurants[i], restaurants[j], dismissed)) {
         parent[find(i)] = find(j);
       }
     }
