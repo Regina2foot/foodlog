@@ -1,7 +1,7 @@
 import { createEmptyState, groupByRestaurant, addRating, updateRating, removeRating, removeRestaurantGroups, mergeRestaurantGroups, generateId } from "./state.js";
 import { sortRestaurants } from "./sort.js";
 import { renderRestaurantList, renderListHeader, renderStarPicker, renderPricePicker, renderTagPicker, setStatus } from "./render.js";
-import { getSettings, saveSettings, removeToken, hasCompleteSettings } from "./settings.js";
+import { getSettings, saveSettings, removeToken, hasCompleteSettings, parseRepoInput } from "./settings.js";
 import { fetchRatings, saveRatings, fetchCurrentUser, GitHubApiError } from "./api.js";
 import { renderRestaurantDetail } from "./history.js";
 import { openMapsUrl, extractNameFromMapsUrl } from "./maps.js";
@@ -84,6 +84,9 @@ async function resolveCurrentUser() {
 }
 
 function describeError(err, prefix) {
+  if (err instanceof GitHubApiError && err.status === 401) {
+    return `${prefix}: GitHub rejected the token — it may be mistyped, expired or revoked. Paste it again in Settings.`;
+  }
   if (err instanceof GitHubApiError) {
     return `${prefix}: ${err.message}`;
   }
@@ -101,8 +104,7 @@ const els = {
   settingsPanel: document.getElementById("settings-panel"),
   settingsForm: document.getElementById("settings-form"),
   settingsStatus: document.getElementById("settings-status"),
-  ownerInput: document.getElementById("setting-owner"),
-  repoInput: document.getElementById("setting-repo"),
+  dataRepoInput: document.getElementById("setting-data-repo"),
   tokenInput: document.getElementById("setting-token"),
   removeTokenButton: document.getElementById("btn-remove-token"),
   ratingForm: document.getElementById("rating-form"),
@@ -488,8 +490,9 @@ function initPickers() {
 
 function initSettingsPanel() {
   const current = getSettings();
-  els.ownerInput.value = current.owner;
-  els.repoInput.value = current.repo;
+  if (current.owner && current.repo) {
+    els.dataRepoInput.value = `${current.owner}/${current.repo}`;
+  }
   updateSettingsStatus();
 
   els.toggleSettingsButton.addEventListener("click", () => {
@@ -498,12 +501,25 @@ function initSettingsPanel() {
 
   els.settingsForm.addEventListener("submit", async (e) => {
     e.preventDefault();
+    const repoValue = els.dataRepoInput.value.trim();
+    const parsed = repoValue ? parseRepoInput(repoValue) : null;
+    if (repoValue && !parsed) {
+      setStatus(
+        els.settingsStatus,
+        "Couldn't read a GitHub repo from the Data repo field. Enter owner/repo, or paste the repo's GitHub link. Nothing was saved.",
+        true
+      );
+      return;
+    }
     saveSettings({
-      owner: els.ownerInput.value.trim(),
-      repo: els.repoInput.value.trim(),
+      owner: parsed?.owner,
+      repo: parsed?.repo,
       // Pasted tokens often carry stray whitespace/newlines, which would end up in the Authorization header.
       token: els.tokenInput.value.trim(),
     });
+    if (parsed) {
+      els.dataRepoInput.value = `${parsed.owner}/${parsed.repo}`;
+    }
     els.tokenInput.value = "";
     updateSettingsStatus();
     await resolveCurrentUser();
@@ -524,7 +540,7 @@ function updateSettingsStatus() {
   const parts = [];
   parts.push(owner && repo ? `Data repo: ${owner}/${repo}` : "Data repo not set.");
   parts.push(token ? "Token saved." : "No token saved.");
-  els.settingsStatus.textContent = parts.join(" ");
+  setStatus(els.settingsStatus, parts.join(" "));
 }
 
 function initRatingForm() {

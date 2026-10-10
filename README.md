@@ -25,8 +25,8 @@ no server, no build step, no framework.
    - Permissions: **Contents: Read and write**
 3. Open the app (the GitHub Pages URL for this repo) and click **Settings**.
    Enter:
-   - the data repo's owner (GitHub username or org)
-   - the data repo's name
+   - the data repo, as `owner/repo` — or just paste the repo's GitHub
+     link (a clone URL works too)
    - your personal access token
 4. Click **Save settings**. The app will load the existing ratings.
 

@@ -337,10 +337,15 @@ below) — see Section 9 for how the list and detail view use this.
 - **CSV export button**: converts the currently loaded data into a CSV
   file client-side and starts the download (no server needed) — each
   visit exports as its own row
-- **Settings input**: fields to enter (and remove) both the data repo's
-  owner/name and your own PAT; a note in the UI that both are only stored
-  locally. Neither is ever hardcoded into the app's source code (see
-  Section 3.1)
+- **Settings input**: fields to enter (and remove) both the data repo and
+  your own PAT; a note in the UI that both are only stored locally.
+  Neither is ever hardcoded into the app's source code (see Section 3.1).
+  The data repo is a single field accepting `owner/repo`, a GitHub page
+  link, or a clone URL (`parseRepoInput` in `settings.js`); unparseable
+  input is rejected with an error instead of being saved. Internally it's
+  still stored as separate owner/repo values. Inputs are trimmed (incl.
+  the token). A 401 from GitHub shows a "token rejected — paste it again"
+  message rather than a bare status code
 - **Write-conflict handling**: before every write (create, edit, delete),
   fetch the file's current `sha` again; on a 409 conflict (someone else
   has written in the meantime), automatically reload, reapply your own

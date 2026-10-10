@@ -24,6 +24,27 @@ export function removeToken() {
   localStorage.removeItem(KEY_TOKEN);
 }
 
+const OWNER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/;
+const REPO_PATTERN = /^[A-Za-z0-9._-]{1,100}$/;
+
+// Accepts "owner/repo", a GitHub page link (https://github.com/owner/repo,
+// with or without extra path), or a clone URL (…/repo.git or
+// git@github.com:owner/repo.git). Returns { owner, repo } or null.
+export function parseRepoInput(value) {
+  let s = (value || "").trim();
+  s = s.replace(/^git@github\.com:/i, "");
+  s = s.replace(/^(https?:\/\/)?(www\.)?github\.com\//i, "");
+  s = s.replace(/[?#].*$/, "");
+  const parts = s.split("/").filter(Boolean);
+  if (parts.length < 2) return null;
+  const owner = parts[0];
+  const repo = parts[1].replace(/\.git$/i, "");
+  if (!OWNER_PATTERN.test(owner) || !REPO_PATTERN.test(repo) || repo === "." || repo === "..") {
+    return null;
+  }
+  return { owner, repo };
+}
+
 export function hasCompleteSettings() {
   const { owner, repo, token } = getSettings();
   return Boolean(owner && repo && token);
