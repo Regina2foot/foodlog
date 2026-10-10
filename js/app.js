@@ -501,7 +501,8 @@ function initSettingsPanel() {
     saveSettings({
       owner: els.ownerInput.value.trim(),
       repo: els.repoInput.value.trim(),
-      token: els.tokenInput.value,
+      // Pasted tokens often carry stray whitespace/newlines, which would end up in the Authorization header.
+      token: els.tokenInput.value.trim(),
     });
     els.tokenInput.value = "";
     updateSettingsStatus();
