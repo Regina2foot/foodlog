@@ -380,6 +380,14 @@ function initListFilters() {
     selectedGroupKeys.clear();
     refreshList();
   });
+  // The list already filters while typing; Enter/Search just closes the
+  // on-screen keyboard, which otherwise hides the results on a phone.
+  els.nameSearchInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      els.nameSearchInput.blur();
+    }
+  });
 }
 
 function initBulkNotSame() {
