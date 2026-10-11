@@ -9,6 +9,19 @@ import { ratingsToCsv, downloadCsv } from "./csv.js";
 import { decodeImportFile, parseGoogleMapsExport, buildRatingsFromImport, applyImport } from "./googleImport.js";
 import { extractPlaceKey, normalizeName, createMatcher, findDuplicateGroups } from "./duplicates.js";
 
+// Bump on every change that gets pushed, so a device still running a
+// cached older app.js is easy to spot (shown at the bottom of Settings).
+const APP_VERSION = "2026-10-11b";
+
+// Phones have no visible error console; surface anything uncaught in the
+// status line instead of failing silently.
+function showUnexpectedError(err) {
+  const el = document.getElementById("status-message");
+  if (el) setStatus(el, `Unexpected error: ${(err && err.message) || err}`, true);
+}
+window.addEventListener("error", (e) => showUnexpectedError(e.error || e.message));
+window.addEventListener("unhandledrejection", (e) => showUnexpectedError(e.reason));
+
 const state = createEmptyState();
 let sortField = "rating";
 let sortDir = "desc";
@@ -686,6 +699,7 @@ function initPickers() {
 }
 
 function initSettingsPanel() {
+  document.getElementById("app-version").textContent = `App version: ${APP_VERSION}`;
   const current = getSettings();
   if (current.owner && current.repo) {
     els.dataRepoInput.value = `${current.owner}/${current.repo}`;

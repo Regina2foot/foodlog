@@ -545,6 +545,9 @@ pick (Section 2.1).
 ## 14. Workflow for Claude Code
 
 After each completed step: commit, then ask before pushing (see Section 2.3).
+Before every push that changes app code, bump `APP_VERSION` in `js/app.js`
+(shown at the bottom of Settings) — it's how we tell whether a device is
+still running a cached older `app.js`.
 
 1. Whenever something is unclear, Section 2.1 applies: ask first, don't
    guess — this covers things like unclear repo names, GitHub username,
