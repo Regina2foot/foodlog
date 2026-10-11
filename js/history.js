@@ -3,7 +3,7 @@
 // "Open in Google Maps" action. All user-supplied text is set via
 // textContent, never innerHTML (see CLAUDE.md Section 4.1).
 
-import { buildStarsDisplay, formatPrice, renderStarPicker, renderPricePicker, renderTagPicker } from "./render.js";
+import { buildStarsDisplay, formatPrice, formatDate, renderStarPicker, renderPricePicker, renderTagPicker } from "./render.js";
 import { isSafeHttpUrl } from "./maps.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -23,97 +23,147 @@ function svgEl(tag, attrs = {}) {
   return node;
 }
 
-// Builds a small two-row SVG: rating (0-5) on top, price level (1-3) below,
-// plotted against visit order (oldest to newest, left to right).
-export function buildHistoryChart(visits) {
-  const chronological = [...visits].sort((a, b) =>
-    (a.visited_at || "").localeCompare(b.visited_at || "")
-  );
+// Two stacked plots over the restaurant's rated visits (oldest left):
+// rating on a 0–5 axis, price on a €–€€€ axis, dates along the bottom.
+// Wishlist entries have no rating/price and are left out. Returns null if
+// there's nothing to plot.
+const CHART = {
+  width: 320,
+  padLeft: 34,
+  padRight: 14,
+  rating: { top: 22, height: 80 },
+  price: { top: 132, height: 50 },
+  dateLabelY: 200,
+  height: 208,
+};
 
-  const width = Math.max(240, chronological.length * 60);
-  const rowHeight = 60;
-  const height = rowHeight * 2 + 30;
-  const padding = 24;
+export function buildHistoryChart(visits) {
+  const rated = visits
+    .filter((v) => (v.status || "visited") !== "wishlist" && v.rating !== null && v.rating !== undefined)
+    .sort((a, b) => (a.visited_at || "").localeCompare(b.visited_at || ""));
+  if (rated.length === 0) return null;
 
   const svg = svgEl("svg", {
-    viewBox: `0 0 ${width} ${height}`,
+    viewBox: `0 0 ${CHART.width} ${CHART.height}`,
     width: "100%",
-    height,
     role: "img",
     "aria-label": "Rating and price level over time",
+    class: "history-chart",
   });
 
-  function plotRow(values, max, yOffset, color, label) {
-    const step = chronological.length > 1 ? (width - padding * 2) / (chronological.length - 1) : 0;
-    const points = values.map((v, i) => {
-      const x = padding + i * step;
-      const y = yOffset + rowHeight - (Math.max(0, Math.min(max, v)) / max) * (rowHeight - 10) - 5;
-      return { x, y };
-    });
+  // Points are inset from both ends so they don't sit on the y-axis and
+  // the outermost date labels aren't clipped.
+  const inset = 24;
+  const plotWidth = CHART.width - CHART.padLeft - CHART.padRight - 2 * inset;
+  const xAt = (i) =>
+    CHART.padLeft + inset + (rated.length === 1 ? plotWidth / 2 : (i * plotWidth) / (rated.length - 1));
 
-    const labelEl = svgEl("text", { x: 0, y: yOffset + 12, "font-size": 10, fill: color });
-    labelEl.textContent = label;
-    svg.appendChild(labelEl);
-
-    if (points.length > 1) {
-      const polyline = svgEl("polyline", {
-        points: points.map((p) => `${p.x},${p.y}`).join(" "),
-        fill: "none",
-        stroke: color,
-        "stroke-width": 2,
-      });
-      svg.appendChild(polyline);
-    }
-
-    points.forEach((p) => {
-      svg.appendChild(svgEl("circle", { cx: p.x, cy: p.y, r: 3, fill: color }));
-    });
+  function text(x, y, content, attrs = {}) {
+    const t = svgEl("text", { x, y, "font-size": 10, fill: "currentColor", ...attrs });
+    t.textContent = content;
+    svg.appendChild(t);
   }
 
-  plotRow(chronological.map((v) => v.rating ?? 0), 5, 0, "#d4820a", "Rating (0-5)");
-  plotRow(chronological.map((v) => v.price_level ?? 0), 3, rowHeight, "#3b7dd8", "Price (1-3)");
+  function line(x1, y1, x2, y2, attrs = {}) {
+    svg.appendChild(svgEl("line", { x1, y1, x2, y2, stroke: "currentColor", ...attrs }));
+  }
 
-  const step = chronological.length > 1 ? (width - padding * 2) / (chronological.length - 1) : 0;
-  chronological.forEach((v, i) => {
-    const label = svgEl("text", {
-      x: padding + i * step,
-      y: height - 4,
-      "font-size": 9,
-      "text-anchor": "middle",
-    });
-    label.textContent = v.visited_at || "";
-    svg.appendChild(label);
+  // One plot: title, y-axis with tick labels + faint grid, x-axis, data.
+  function plot({ top, height }, title, ticks, min, max, values, color) {
+    const yAt = (v) => top + height - ((v - min) / (max - min)) * height;
+    text(0, top - 8, title, { "font-weight": 600 });
+    for (const { value, label } of ticks) {
+      const y = yAt(value);
+      line(CHART.padLeft, y, CHART.width - CHART.padRight, y, { "stroke-opacity": 0.12 });
+      text(CHART.padLeft - 6, y + 3.5, label, { "text-anchor": "end", "fill-opacity": 0.7 });
+    }
+    line(CHART.padLeft, top, CHART.padLeft, top + height, { "stroke-opacity": 0.5 });
+    line(CHART.padLeft, top + height, CHART.width - CHART.padRight, top + height, { "stroke-opacity": 0.5 });
+
+    const points = values
+      .map((v, i) => (v === null || v === undefined || v < min ? null : { x: xAt(i), y: yAt(Math.min(max, v)) }))
+      .filter(Boolean);
+    if (points.length > 1) {
+      svg.appendChild(
+        svgEl("polyline", {
+          points: points.map((p) => `${p.x},${p.y}`).join(" "),
+          fill: "none",
+          stroke: color,
+          "stroke-width": 2,
+        })
+      );
+    }
+    for (const p of points) svg.appendChild(svgEl("circle", { cx: p.x, cy: p.y, r: 3.5, fill: color }));
+  }
+
+  plot(
+    CHART.rating,
+    "Rating",
+    [0, 1, 2, 3, 4, 5].map((v) => ({ value: v, label: `${v}★` })),
+    0,
+    5,
+    rated.map((v) => v.rating),
+    "#d4820a"
+  );
+  plot(
+    CHART.price,
+    "Price",
+    [1, 2, 3].map((v) => ({ value: v, label: "€".repeat(v) })),
+    1,
+    3,
+    rated.map((v) => v.price_level),
+    "#3b7dd8"
+  );
+
+  // Date labels under the x-axis; thinned out so they never overlap.
+  const every = Math.ceil(rated.length / 5);
+  rated.forEach((v, i) => {
+    if (i % every !== 0 && i !== rated.length - 1) return;
+    text(xAt(i), CHART.dateLabelY, formatDate(v.visited_at), { "text-anchor": "middle", "font-size": 9, "fill-opacity": 0.7 });
   });
 
   return svg;
 }
 
-function renderVisitRow(visit, { onEdit, onDelete }) {
-  const row = el("tr");
-  const dateCell = el("td", { textContent: visit.visited_at || "" });
-  const ratingCell = el("td");
-  ratingCell.appendChild(buildStarsDisplay(visit.rating));
-  const priceCell = el("td", { textContent: visit.status === "wishlist" ? "" : formatPrice(visit.price_level) });
-  const commentCell = el("td", { textContent: visit.comment || "" });
-  const tagsCell = el("td", { textContent: (visit.tags || []).join(", ") });
+// One visit as a two-line card: date, stars, price and actions on top;
+// comment and tags underneath (only if there are any).
+function renderVisitCard(visit, { onEdit, onDelete }) {
+  const isWishlist = visit.status === "wishlist";
+  const card = el("div", { className: "visit-card" });
 
   const editButton = el("button", { type: "button", textContent: "Edit" });
   editButton.addEventListener("click", () => onEdit(visit.id));
   const deleteButton = el("button", { type: "button", textContent: "Delete" });
   deleteButton.addEventListener("click", () => {
-    if (confirm(`Delete this visit (${visit.visited_at || "no date"})?`)) {
+    if (confirm(`Delete this visit (${formatDate(visit.visited_at) || "no date"})?`)) {
       onDelete(visit.id);
     }
   });
-  const actionsCell = el("td", {}, [editButton, deleteButton]);
 
-  row.append(dateCell, ratingCell, priceCell, commentCell, tagsCell, actionsCell);
-  return row;
+  const top = el("div", { className: "visit-line" }, [
+    el("span", { className: "visit-date", textContent: isWishlist ? "Wishlist" : formatDate(visit.visited_at) || "—" }),
+    buildStarsDisplay(visit.rating),
+    el("span", { className: "visit-price", textContent: isWishlist ? "" : formatPrice(visit.price_level) }),
+    el("span", { className: "visit-actions" }, [editButton, deleteButton]),
+  ]);
+  card.appendChild(top);
+
+  const tags = visit.tags || [];
+  if (visit.comment || tags.length) {
+    const details = el("div", { className: "visit-line visit-details" });
+    if (visit.comment) details.appendChild(el("span", { className: "visit-comment", textContent: visit.comment }));
+    for (const tag of tags) details.appendChild(el("span", { className: "tag-chip", textContent: tag }));
+    card.appendChild(details);
+  }
+  return card;
+}
+
+function labeled(labelText, control) {
+  return el("label", { className: "edit-field" }, [document.createTextNode(labelText), control]);
 }
 
 function renderVisitEditForm(visit, allTags, { onSave, onCancel }) {
-  const row = el("tr");
-  const cell = el("td", { colSpan: 6 });
+  const card = el("div", { className: "visit-card visit-edit" });
 
   const wishlistLabel = el("label", { className: "checkbox-label" });
   const wishlistCheckbox = el("input", { type: "checkbox", checked: visit.status === "wishlist" });
@@ -126,7 +176,9 @@ function renderVisitEditForm(visit, allTags, { onSave, onCancel }) {
   renderStarPicker(ratingPicker, () => {});
   renderPricePicker(pricePicker, () => {});
 
-  const commentInput = el("input", { type: "text", value: visit.comment || "", placeholder: "Comment" });
+  const commentInput = el("textarea", { rows: 2, value: visit.comment || "", placeholder: "Comment" });
+  const dateInput = el("input", { type: "date", value: visit.visited_at || "" });
+
   let selectedTags = [...(visit.tags || [])];
   const tagsContainer = el("div", { className: "tag-picker" });
   const refreshTags = () => {
@@ -136,13 +188,12 @@ function renderVisitEditForm(visit, allTags, { onSave, onCancel }) {
     });
   };
   refreshTags();
-  const dateInput = el("input", { type: "date", value: visit.visited_at || "" });
 
-  const visitedFields = el("div", { className: "form-actions", hidden: visit.status === "wishlist" }, [
-    ratingPicker,
-    pricePicker,
-    commentInput,
-    dateInput,
+  const visitedFields = el("div", { className: "edit-fields", hidden: visit.status === "wishlist" }, [
+    labeled("Rating", ratingPicker),
+    labeled("Price", pricePicker),
+    labeled("Comment", commentInput),
+    labeled("Visit date", dateInput),
   ]);
 
   wishlistCheckbox.addEventListener("change", () => {
@@ -164,11 +215,13 @@ function renderVisitEditForm(visit, allTags, { onSave, onCancel }) {
   const cancelButton = el("button", { type: "button", textContent: "Cancel" });
   cancelButton.addEventListener("click", onCancel);
 
-  const buttons = el("div", { className: "form-actions" }, [saveButton, cancelButton]);
-  const form = el("div", {}, [wishlistLabel, tagsContainer, visitedFields, buttons]);
-  cell.appendChild(form);
-  row.appendChild(cell);
-  return row;
+  card.append(
+    wishlistLabel,
+    visitedFields,
+    labeled("Tags", tagsContainer),
+    el("div", { className: "form-actions" }, [saveButton, cancelButton])
+  );
+  return card;
 }
 
 // callbacks: onOpenMaps(url), onEdit(id), onCancelEdit(), onSaveEdit(id, changes), onDelete(id)
@@ -176,8 +229,7 @@ function renderVisitEditForm(visit, allTags, { onSave, onCancel }) {
 export function renderRestaurantDetail(container, restaurant, callbacks, editingVisitId = null, allTags = []) {
   container.textContent = "";
 
-  const heading = el("h2", { textContent: restaurant.name });
-  container.appendChild(heading);
+  container.appendChild(el("h2", { textContent: restaurant.name }));
 
   const mapsButton = el("button", { type: "button", textContent: "Open in Google Maps" });
   mapsButton.disabled = !isSafeHttpUrl(restaurant.google_maps_url);
@@ -185,36 +237,19 @@ export function renderRestaurantDetail(container, restaurant, callbacks, editing
   container.appendChild(mapsButton);
 
   const chartContainer = el("div", { className: "chart-container" });
-  chartContainer.appendChild(buildHistoryChart(restaurant.visits));
+  const chart = buildHistoryChart(restaurant.visits);
+  if (chart) chartContainer.appendChild(chart);
+  else chartContainer.appendChild(el("p", { className: "hint", textContent: "No rated visits yet, so no chart." }));
   container.appendChild(chartContainer);
 
-  const table = el("table", { className: "visit-history" });
-  const thead = el("thead");
-  const headRow = el("tr");
-  ["Date", "Rating", "Price", "Comment", "Tags", "Actions"].forEach((text) => {
-    headRow.appendChild(el("th", { textContent: text }));
-  });
-  thead.appendChild(headRow);
-  table.appendChild(thead);
-
-  const tbody = el("tbody");
+  container.appendChild(el("h3", { textContent: "Visits" }));
+  const list = el("div", { className: "visit-list" });
   for (const visit of restaurant.visits) {
-    if (visit.id === editingVisitId) {
-      tbody.appendChild(
-        renderVisitEditForm(visit, allTags, {
-          onSave: callbacks.onSaveEdit,
-          onCancel: callbacks.onCancelEdit,
-        })
-      );
-    } else {
-      tbody.appendChild(
-        renderVisitRow(visit, {
-          onEdit: callbacks.onEdit,
-          onDelete: callbacks.onDelete,
-        })
-      );
-    }
+    list.appendChild(
+      visit.id === editingVisitId
+        ? renderVisitEditForm(visit, allTags, { onSave: callbacks.onSaveEdit, onCancel: callbacks.onCancelEdit })
+        : renderVisitCard(visit, { onEdit: callbacks.onEdit, onDelete: callbacks.onDelete })
+    );
   }
-  table.appendChild(tbody);
-  container.appendChild(table);
+  container.appendChild(list);
 }

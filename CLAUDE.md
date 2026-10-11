@@ -311,6 +311,15 @@ below) — see Section 9 for how the list and detail view use this.
 
 ## 9. Core features – Phase 1 (just me)
 
+- **Layout**: the phone is the main use case. Separate tabs (one screen at
+  a time): **List** (start tab) · **New rating** · **Settings** ·
+  **Import** · **Export**, plus a ↻ refresh icon in the header (inline
+  SVG, no icon library). A status line under the tab bar is visible on
+  every tab. Everything must fit a ~360px-wide screen without sideways
+  scrolling: the list shows select, name, rating, price, date, and the
+  comment column only on wider screens (CSS media query at 640px). The
+  same layout works on a laptop (page capped at 900px wide). Don't block
+  zooming to "fix" overflow — make content fit instead
 - **"New rating" form**: paste a Google Maps link, enter a name, star
   rating via click widget (0–5), price level (1–3 €), comment, optional
   tags + visit date. Works both for a brand-new restaurant and for adding
@@ -367,10 +376,14 @@ below) — see Section 9 for how the list and detail view use this.
     restaurant — tags every one of their visits with a shared
     `restaurant_id` (Section 8) in one batch write, without touching any
     visit's own `google_maps_url`
-- **Restaurant detail view**, opened by clicking a row, showing:
+- **Restaurant detail view**, opened by clicking a row (inside the List
+  tab), showing:
   - the full visit history for that restaurant (all past ratings,
-    comments, dates)
-  - a simple chart of rating (and price level) over time across visits
+    comments, dates), one two-line card per visit (date, stars, price,
+    Edit/Delete; then comment and tags)
+  - a simple chart of rating (and price level) over time across visits,
+    with labelled axes (0–5★, €–€€€, visit dates); only rated visits are
+    plotted
   - an explicit **"Open in Google Maps"** button/link (with the URL
     scheme check from Section 4.1) — disabled when the restaurant has no
     Maps link

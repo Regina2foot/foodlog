@@ -11,7 +11,7 @@ import { extractPlaceKey, normalizeName, createMatcher, findDuplicateGroups } fr
 
 // Bump on every change that gets pushed, so a device still running a
 // cached older app.js is easy to spot (shown at the bottom of Settings).
-const APP_VERSION = "2026-10-11b";
+const APP_VERSION = "2026-10-11c";
 
 // Phones have no visible error console; surface anything uncaught in the
 // status line instead of failing silently.
@@ -116,8 +116,6 @@ const els = {
   sortDirButton: document.getElementById("btn-sort-dir"),
   refreshButton: document.getElementById("btn-refresh"),
   exportButton: document.getElementById("btn-export-csv"),
-  toggleSettingsButton: document.getElementById("btn-toggle-settings"),
-  settingsPanel: document.getElementById("settings-panel"),
   settingsForm: document.getElementById("settings-form"),
   settingsStatus: document.getElementById("settings-status"),
   dataRepoInput: document.getElementById("setting-data-repo"),
@@ -132,7 +130,6 @@ const els = {
   tagsPicker: document.getElementById("field-tags"),
   visitedAtInput: document.getElementById("field-visited-at"),
   listPanel: document.getElementById("list-panel"),
-  formPanel: document.getElementById("form-panel"),
   detailPanel: document.getElementById("detail-panel"),
   detailContent: document.getElementById("detail-content"),
   backToListButton: document.getElementById("btn-back-to-list"),
@@ -142,8 +139,6 @@ const els = {
   viewWishlistButton: document.getElementById("btn-view-wishlist"),
   sortControls: document.getElementById("sort-controls"),
   restaurantTableHeaderRow: document.getElementById("restaurant-table-header-row"),
-  toggleImportButton: document.getElementById("btn-toggle-import"),
-  importPanel: document.getElementById("import-panel"),
   importFileInput: document.getElementById("import-file-input"),
   importTagInput: document.getElementById("import-tag-input"),
   importStatus: document.getElementById("import-status"),
@@ -345,13 +340,14 @@ function refreshDetail() {
   );
 }
 
+// The detail view lives inside the List tab, replacing the list itself.
 function showDetail(groupKey) {
   detailGroupKey = groupKey;
   editingVisitId = null;
   els.listPanel.hidden = true;
-  els.formPanel.hidden = true;
   els.detailPanel.hidden = false;
   refreshDetail();
+  window.scrollTo(0, 0);
 }
 
 function showList() {
@@ -359,11 +355,31 @@ function showList() {
   editingVisitId = null;
   els.detailPanel.hidden = true;
   els.listPanel.hidden = false;
-  els.formPanel.hidden = false;
 }
 
 function initDetailView() {
   els.backToListButton.addEventListener("click", showList);
+}
+
+// Tabs are separate screens: only one panel is visible at a time. Tapping
+// "List" always returns to the list itself, even from an open detail view.
+function showTab(name) {
+  for (const tab of document.querySelectorAll(".tab-bar .tab")) {
+    const active = tab.dataset.tab === name;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-selected", String(active));
+  }
+  for (const panel of document.querySelectorAll("[data-tab-panel]")) {
+    panel.hidden = panel.dataset.tabPanel !== name;
+  }
+  if (name === "list") showList();
+  window.scrollTo(0, 0);
+}
+
+function initTabs() {
+  for (const tab of document.querySelectorAll(".tab-bar .tab")) {
+    tab.addEventListener("click", () => showTab(tab.dataset.tab));
+  }
 }
 
 function initViewToggle() {
@@ -597,10 +613,6 @@ function showImportReview(items, summary, bulkTag) {
 }
 
 function initImport() {
-  els.toggleImportButton.addEventListener("click", () => {
-    els.importPanel.hidden = !els.importPanel.hidden;
-  });
-
   els.importFileInput.addEventListener("change", async () => {
     const file = els.importFileInput.files[0];
     if (!file) return;
@@ -705,10 +717,6 @@ function initSettingsPanel() {
     els.dataRepoInput.value = `${current.owner}/${current.repo}`;
   }
   updateSettingsStatus();
-
-  els.toggleSettingsButton.addEventListener("click", () => {
-    els.settingsPanel.hidden = !els.settingsPanel.hidden;
-  });
 
   els.settingsForm.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -849,6 +857,7 @@ async function saveNewRating(rating, attachToGroupKey) {
     formTags = [];
     initPickers();
     refreshList();
+    showTab("list");
     setStatus(els.statusMessage, isWishlist ? "Added to wishlist." : "Rating saved.");
   } catch (err) {
     setStatus(els.statusMessage, describeError(err, "Failed to save rating"), true);
@@ -913,6 +922,7 @@ function initToolbar() {
 }
 
 async function init() {
+  initTabs();
   initPickers();
   initSettingsPanel();
   initImport();

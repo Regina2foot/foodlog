@@ -136,9 +136,40 @@ export function renderTagPicker(container, allTags, selectedTags, onChange) {
   container.appendChild(addRow);
 }
 
-// Leading "" is the select-checkbox column.
-const VISITED_COLUMNS = ["", "Name", "Rating", "Price", "Last comment", "Last edit"];
-const WISHLIST_COLUMNS = ["", "Name", "Tags", "Added"];
+// Short, locale-formatted date (e.g. "10.10.26" on a German phone).
+// Accepts "YYYY-MM-DD" or a full ISO timestamp; anything else is shown as-is.
+export function formatDate(value) {
+  if (!value) return "";
+  const m = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return String(value);
+  const date = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return date.toLocaleDateString(undefined, { day: "2-digit", month: "2-digit", year: "2-digit" });
+}
+
+// First column is the select checkbox. `className` lets CSS hide columns
+// on narrow screens (the comment only shows where there's room).
+const VISITED_COLUMNS = [
+  { label: "", className: "col-select" },
+  { label: "Name", className: "col-name" },
+  { label: "Rating", className: "col-rating" },
+  { label: "Price", className: "col-price" },
+  { label: "Last edit", className: "col-date" },
+  { label: "Comment", className: "col-comment" },
+];
+const WISHLIST_COLUMNS = [
+  { label: "", className: "col-select" },
+  { label: "Name", className: "col-name" },
+  { label: "Tags", className: "col-tags" },
+  { label: "Added", className: "col-date" },
+];
+
+function cell(className, content) {
+  const td = document.createElement("td");
+  td.className = className;
+  if (content instanceof Node) td.appendChild(content);
+  else td.textContent = content ?? "";
+  return td;
+}
 
 // Rewrites the table header row for the current list view mode. The first
 // column is a "select all visible rows" checkbox; `allSelected` reflects
@@ -146,8 +177,9 @@ const WISHLIST_COLUMNS = ["", "Name", "Tags", "Added"];
 export function renderListHeader(headerRow, mode = "visited", onToggleSelectAll, allSelected = false) {
   headerRow.textContent = "";
   const columns = mode === "wishlist" ? WISHLIST_COLUMNS : VISITED_COLUMNS;
-  columns.forEach((text, idx) => {
+  columns.forEach(({ label, className }, idx) => {
     const th = document.createElement("th");
+    th.className = className;
     if (idx === 0) {
       const checkbox = document.createElement("input");
       checkbox.type = "checkbox";
@@ -156,7 +188,7 @@ export function renderListHeader(headerRow, mode = "visited", onToggleSelectAll,
       checkbox.addEventListener("change", () => onToggleSelectAll(checkbox.checked));
       th.appendChild(checkbox);
     } else {
-      th.textContent = text;
+      th.textContent = label;
     }
     headerRow.appendChild(th);
   });
@@ -166,7 +198,7 @@ export function renderListHeader(headerRow, mode = "visited", onToggleSelectAll,
 // restaurant's groupKey so the caller can open the detail view (the Google
 // Maps link is optional, so groupKey — not google_maps_url — is what
 // uniquely identifies a restaurant/group; see state.js).
-// `mode` ("visited" | "wishlist") selects which columns to show.
+// `mode` ("visited" | "wishlist" | "duplicates") selects which columns to show.
 // `onToggleSelect(groupKey, checked)` fires from each row's checkbox;
 // `selectedKeys` (a Set of groupKeys) sets each checkbox's initial state.
 // Options: `groupStartKeys` marks rows that start a new duplicate group
@@ -184,12 +216,12 @@ export function renderRestaurantList(
 
   if (restaurants.length === 0) {
     const row = document.createElement("tr");
-    const cell = document.createElement("td");
-    cell.colSpan = mode === "wishlist" ? WISHLIST_COLUMNS.length : VISITED_COLUMNS.length;
-    cell.textContent =
+    const td = document.createElement("td");
+    td.colSpan = mode === "wishlist" ? WISHLIST_COLUMNS.length : VISITED_COLUMNS.length;
+    td.textContent =
       emptyMessage ||
       (mode === "wishlist" ? "Wishlist is empty." : mode === "duplicates" ? "No possible duplicates found." : "No ratings yet.");
-    row.appendChild(cell);
+    row.appendChild(td);
     tbody.appendChild(row);
     return;
   }
@@ -199,42 +231,27 @@ export function renderRestaurantList(
     row.tabIndex = 0;
     if (groupStartKeys.has(restaurant.groupKey)) row.classList.add("dup-group-start");
 
-    const selectCell = document.createElement("td");
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
     checkbox.checked = selectedKeys.has(restaurant.groupKey);
     checkbox.setAttribute("aria-label", `Select ${restaurant.name}`);
     checkbox.addEventListener("click", (e) => e.stopPropagation());
     checkbox.addEventListener("change", () => onToggleSelect(restaurant.groupKey, checkbox.checked));
-    selectCell.appendChild(checkbox);
-    row.appendChild(selectCell);
+    row.append(cell("col-select", checkbox), cell("col-name", restaurant.name));
 
-    const nameCell = document.createElement("td");
-    nameCell.textContent = restaurant.name;
-    row.appendChild(nameCell);
-
+    const latest = restaurant.latest;
     if (mode === "wishlist") {
-      const tagsCell = document.createElement("td");
-      tagsCell.textContent = (restaurant.latest.tags || []).join(", ");
-
-      const addedCell = document.createElement("td");
-      addedCell.textContent = (restaurant.latest.created_at || "").slice(0, 10);
-
-      row.append(tagsCell, addedCell);
+      row.append(
+        cell("col-tags", (latest.tags || []).join(", ")),
+        cell("col-date", formatDate(latest.created_at))
+      );
     } else {
-      const ratingCell = document.createElement("td");
-      ratingCell.appendChild(buildStarsDisplay(restaurant.latest.rating));
-
-      const priceCell = document.createElement("td");
-      priceCell.textContent = formatPrice(restaurant.latest.price_level);
-
-      const commentCell = document.createElement("td");
-      commentCell.textContent = restaurant.latest.comment || "";
-
-      const dateCell = document.createElement("td");
-      dateCell.textContent = restaurant.latest.visited_at || "";
-
-      row.append(ratingCell, priceCell, commentCell, dateCell);
+      row.append(
+        cell("col-rating", buildStarsDisplay(latest.rating)),
+        cell("col-price", latest.status === "wishlist" ? "" : formatPrice(latest.price_level)),
+        cell("col-date", formatDate(latest.visited_at)),
+        cell("col-comment", latest.comment || "")
+      );
     }
 
     row.addEventListener("click", () => onRowClick(restaurant.groupKey));
