@@ -313,7 +313,7 @@ below) — see Section 9 for how the list and detail view use this.
 ## 9. Core features – Phase 1 (just me)
 
 - **Layout**: the phone is the main use case. Separate tabs (one screen at
-  a time): **List** (start tab) · **New rating** · **Settings** ·
+  a time): **List** (start tab) · **New** (new rating) · **Settings** ·
   **Import** · **Export**, plus a ↻ refresh icon in the header (inline
   SVG, no icon library). A status line under the tab bar is visible on
   every tab. Everything must fit a ~360px-wide screen without sideways
