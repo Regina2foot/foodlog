@@ -29,6 +29,10 @@
 </nav>
 
 <div id="status-message" class="hint status-line" role="status"></div>
+<div id="update-banner" class="update-banner" hidden>
+  <span>A new version of the app is available.</span>
+  <button type="button" id="btn-update-app">Update now</button>
+</div>
 
 <main>
 <section class="tab-panel" data-tab-panel="list">
@@ -49,14 +53,6 @@
         </label>
         <button type="button" id="btn-sort-dir" data-dir="desc">↓</button>
       </div>
-      <div class="sort-controls" id="wishlist-tag-filter-container" hidden>
-        <label>
-          Tag
-          <select id="wishlist-tag-filter">
-            <option value="">All tags</option>
-          </select>
-        </label>
-      </div>
       <label class="checkbox-label">
         <input type="checkbox" id="show-duplicates" />
         Show possible duplicates
@@ -65,6 +61,7 @@
       <button type="button" id="btn-not-same" hidden></button>
       <button type="button" id="btn-delete-selected" hidden></button>
     </div>
+    <div id="tag-filter" class="tag-filter" role="group" aria-label="Filter by tag" hidden></div>
     <input type="search" id="name-search" class="name-search" placeholder="Search by name" autocomplete="off" enterkeyhint="search" />
     <table id="restaurant-table">
       <thead>

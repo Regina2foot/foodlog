@@ -11,6 +11,12 @@
   box-sizing: border-box;
 }
 
+/* Without this, any element with its own display (e.g. flex) ignores the
+   hidden attribute and stays visible. */
+[hidden] {
+  display: none !important;
+}
+
 body {
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   max-width: 900px;
@@ -272,19 +278,45 @@ th, td {
   vertical-align: middle;
 }
 
+/* Fixed layout: the small columns get fixed widths and the name (plus
+   the comment on wide screens) gets all the rest, so names aren't
+   squeezed into one letter per line. */
+#restaurant-table {
+  table-layout: fixed;
+}
+
 #restaurant-table .col-select {
   width: 1.75rem;
   padding-right: 0;
 }
 
-#restaurant-table .col-name {
-  overflow-wrap: anywhere;
+#restaurant-table .col-rating {
+  width: 4.75rem;
 }
 
-#restaurant-table .col-rating,
-#restaurant-table .col-price,
+#restaurant-table .col-price {
+  width: 2.75rem;
+}
+
+#restaurant-table .col-tags {
+  width: 3.75rem;
+}
+
 #restaurant-table .col-date {
+  width: 4.75rem;
+}
+
+#restaurant-table .col-name {
+  overflow-wrap: break-word;
+  hyphens: auto;
+}
+
+#restaurant-table td.col-rating,
+#restaurant-table td.col-price,
+#restaurant-table td.col-tags,
+#restaurant-table td.col-date {
   white-space: nowrap;
+  overflow: hidden;
 }
 
 #restaurant-table .col-rating .stars-display {
@@ -301,8 +333,27 @@ th, td {
 
   #restaurant-table th,
   #restaurant-table td {
-    padding: 0.5rem 0.25rem;
-    font-size: 0.9rem;
+    padding: 0.5rem 0.2rem;
+    font-size: 0.85rem;
+  }
+
+  #restaurant-table .col-select { width: 1.5rem; }
+  #restaurant-table .col-rating { width: 4.1rem; }
+  #restaurant-table .col-price { width: 2.5rem; }
+  #restaurant-table .col-tags { width: 3.4rem; }
+  #restaurant-table .col-date { width: 3.9rem; }
+
+  #restaurant-table .tag-dots {
+    gap: 0.15rem;
+  }
+
+  #restaurant-table .tag-dot {
+    width: 0.6rem;
+    height: 0.6rem;
+  }
+
+  #restaurant-table .col-rating .stars-display {
+    font-size: 0.75rem;
   }
 }
 
@@ -458,3 +509,69 @@ tbody tr:hover {
 .review-item .checkbox-label {
   margin: 0.25rem 0;
 }
+
+.tag-dot {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.tag-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.tag-dots-more {
+  font-size: 0.75rem;
+  opacity: 0.7;
+}
+
+
+.tag-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.6rem;
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.filter-chip.active {
+  border-color: var(--accent);
+  background: var(--bg-panel);
+  font-weight: 600;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  margin-bottom: 0.5rem;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+

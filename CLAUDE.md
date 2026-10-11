@@ -202,6 +202,7 @@ extensions are easy, rather than requiring larger rewrites.
     SVG, no charting library)
   - `duplicates.js` — place-ID extraction and name matching for duplicate
     detection (added later, Section 9)
+  - `tagColors.js` — distinct per-tag colours (added later, Section 9)
   - `googleImport.js`, `settings.js` — Google Takeout import parsing;
     local settings storage + data-repo input parsing (added later)
   - `app.js` — wires the modules together, event handling, entry point
@@ -316,10 +317,24 @@ below) — see Section 9 for how the list and detail view use this.
   **Import** · **Export**, plus a ↻ refresh icon in the header (inline
   SVG, no icon library). A status line under the tab bar is visible on
   every tab. Everything must fit a ~360px-wide screen without sideways
-  scrolling: the list shows select, name, rating, price, date, and the
-  comment column only on wider screens (CSS media query at 640px). The
-  same layout works on a laptop (page capped at 900px wide). Don't block
-  zooming to "fix" overflow — make content fit instead
+  scrolling: the list shows select, name, rating, price, tags (coloured
+  dots, max 3 + "+N"), date, and the comment column only on wider screens
+  (CSS media query at 640px). The table uses fixed widths for the small
+  columns so the name gets the rest and isn't squeezed. The same layout
+  works on a laptop (page capped at 900px wide). Don't block zooming to
+  "fix" overflow — make content fit instead
+- **Phone back button**: the list is the "home" history entry; opening a
+  restaurant or another tab adds exactly one entry (further navigation
+  replaces it), so back returns to the list, and back from the list
+  leaves the app. In-app "back to list" actions use `history.back()` so
+  history stays in step
+- **Tag colours** (`js/tagColors.js`): computed, not stored — tags are
+  numbered by first appearance and spread around the colour wheel by the
+  golden angle (plus a 3-step lightness cycle), so no two tags share a
+  colour and it's identical on every device. Deleting every early entry
+  of a tag can renumber tags and shift colours. Used for the list's tag
+  dots, the tag filter chips (which double as the legend), tag chips in
+  the detail view, and the tag picker
 - **"New rating" form**: paste a Google Maps link, enter a name, star
   rating via click widget (0–5), price level (1–3 €), comment, optional
   tags + visit date. Works both for a brand-new restaurant and for adding
@@ -330,7 +345,8 @@ below) — see Section 9 for how the list and detail view use this.
   (rating, price level, comment). Sortable by stars, name, date — sorting
   uses each restaurant's latest visit. A Rated/Wishlist toggle switches
   the view (`status`, Section 8); Wishlist rows show tags/date-added
-  columns instead and can be filtered down to one tag at a time. A whole
+  columns instead. Both views can be filtered down to one tag at a time
+  via a row of tag chips (only tags occurring in that view). A whole
   restaurant (not each entry) is classified: it's in Rated once any of its
   visits is rated, and only in Wishlist while all its entries are
   wishlist entries — so a wishlist entry merged with or attached to a
@@ -392,7 +408,14 @@ below) — see Section 9 for how the list and detail view use this.
     between visited/wishlist either way, converting a wishlist entry once
     you've actually been
 - **"Refresh" button**: reloads the data from the repo (no automatic
-  real-time sync wanted, a manual reload is enough)
+  real-time sync wanted, a manual reload is enough). It — and app start —
+  also fetches `js/app.js` from the app's own site (same origin, no other
+  service, bypassing cache) and compares its `APP_VERSION`; if the live
+  one differs, an "A new version is available — Update now" banner
+  appears. Update re-downloads every same-origin file the page loaded
+  (taken from the Resource Timing API, so no file list to maintain) and
+  reloads. This relies on the exact line `const APP_VERSION = "…";` in
+  `app.js`
 - **CSV export button**: converts the currently loaded data into a CSV
   file client-side and starts the download (no server needed) — each
   visit exports as its own row
@@ -456,9 +479,7 @@ pick (Section 2.1).
 - Additional automated backup: a small **Python script** that, e.g.,
   weekly via a GitHub Action, saves `ratings.json` as an extra CSV
   snapshot in the repo (defense in depth, in addition to the Git history)
-- [x] Filter by tag — built, but **Wishlist view only** so far (a
-      dropdown of that view's distinct tags). Not done: the same for the
-      Rated view
+- [x] Filter by tag — built for both Rated and Wishlist views (tag chips)
 - [x] Search by name — built (Section 9), all views
 - [x] Decided: no separate category field — tags double as categories
       (e.g. bulk-tagging a Google Maps import as "Gregors

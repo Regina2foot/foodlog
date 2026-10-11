@@ -3,7 +3,7 @@
 // "Open in Google Maps" action. All user-supplied text is set via
 // textContent, never innerHTML (see CLAUDE.md Section 4.1).
 
-import { buildStarsDisplay, formatPrice, formatDate, renderStarPicker, renderPricePicker, renderTagPicker } from "./render.js";
+import { buildStarsDisplay, buildTagDot, formatPrice, formatDate, renderStarPicker, renderPricePicker, renderTagPicker } from "./render.js";
 import { isSafeHttpUrl } from "./maps.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -127,7 +127,7 @@ export function buildHistoryChart(visits) {
 
 // One visit as a two-line card: date, stars, price and actions on top;
 // comment and tags underneath (only if there are any).
-function renderVisitCard(visit, { onEdit, onDelete }) {
+function renderVisitCard(visit, tagColors, { onEdit, onDelete }) {
   const isWishlist = visit.status === "wishlist";
   const card = el("div", { className: "visit-card" });
 
@@ -152,7 +152,9 @@ function renderVisitCard(visit, { onEdit, onDelete }) {
   if (visit.comment || tags.length) {
     const details = el("div", { className: "visit-line visit-details" });
     if (visit.comment) details.appendChild(el("span", { className: "visit-comment", textContent: visit.comment }));
-    for (const tag of tags) details.appendChild(el("span", { className: "tag-chip", textContent: tag }));
+    for (const tag of tags) {
+      details.appendChild(el("span", { className: "tag-chip" }, [buildTagDot(tag, tagColors), document.createTextNode(tag)]));
+    }
     card.appendChild(details);
   }
   return card;
@@ -162,7 +164,7 @@ function labeled(labelText, control) {
   return el("label", { className: "edit-field" }, [document.createTextNode(labelText), control]);
 }
 
-function renderVisitEditForm(visit, allTags, { onSave, onCancel }) {
+function renderVisitEditForm(visit, allTags, tagColors, { onSave, onCancel }) {
   const card = el("div", { className: "visit-card visit-edit" });
 
   const wishlistLabel = el("label", { className: "checkbox-label" });
@@ -182,10 +184,16 @@ function renderVisitEditForm(visit, allTags, { onSave, onCancel }) {
   let selectedTags = [...(visit.tags || [])];
   const tagsContainer = el("div", { className: "tag-picker" });
   const refreshTags = () => {
-    renderTagPicker(tagsContainer, allTags, selectedTags, (next) => {
-      selectedTags = next;
-      refreshTags();
-    });
+    renderTagPicker(
+      tagsContainer,
+      allTags,
+      selectedTags,
+      (next) => {
+        selectedTags = next;
+        refreshTags();
+      },
+      tagColors
+    );
   };
   refreshTags();
 
@@ -225,8 +233,9 @@ function renderVisitEditForm(visit, allTags, { onSave, onCancel }) {
 }
 
 // callbacks: onOpenMaps(url), onEdit(id), onCancelEdit(), onSaveEdit(id, changes), onDelete(id)
-// `allTags` is every tag seen anywhere, passed through to the edit form's tag picker.
-export function renderRestaurantDetail(container, restaurant, callbacks, editingVisitId = null, allTags = []) {
+// `allTags` is every tag seen anywhere, passed through to the edit form's tag picker;
+// `tagColors` (tag -> colour) colours tag chips and the picker.
+export function renderRestaurantDetail(container, restaurant, callbacks, editingVisitId = null, allTags = [], tagColors = new Map()) {
   container.textContent = "";
 
   container.appendChild(el("h2", { textContent: restaurant.name }));
@@ -247,8 +256,8 @@ export function renderRestaurantDetail(container, restaurant, callbacks, editing
   for (const visit of restaurant.visits) {
     list.appendChild(
       visit.id === editingVisitId
-        ? renderVisitEditForm(visit, allTags, { onSave: callbacks.onSaveEdit, onCancel: callbacks.onCancelEdit })
-        : renderVisitCard(visit, { onEdit: callbacks.onEdit, onDelete: callbacks.onDelete })
+        ? renderVisitEditForm(visit, allTags, tagColors, { onSave: callbacks.onSaveEdit, onCancel: callbacks.onCancelEdit })
+        : renderVisitCard(visit, tagColors, { onEdit: callbacks.onEdit, onDelete: callbacks.onDelete })
     );
   }
   container.appendChild(list);

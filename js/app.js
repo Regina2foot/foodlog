@@ -1,6 +1,7 @@
 import { createEmptyState, groupByRestaurant, addRating, updateRating, removeRating, removeRestaurantGroups, mergeRestaurantGroups, markRestaurantsDifferent, generateId } from "./state.js";
 import { sortRestaurants } from "./sort.js";
-import { renderRestaurantList, renderListHeader, renderStarPicker, renderPricePicker, renderTagPicker, setStatus } from "./render.js";
+import { renderRestaurantList, renderListHeader, renderStarPicker, renderPricePicker, renderTagPicker, renderTagFilter, restaurantTags, setStatus } from "./render.js";
+import { computeTagColors } from "./tagColors.js";
 import { getSettings, saveSettings, removeToken, hasCompleteSettings, parseRepoInput } from "./settings.js";
 import { fetchRatings, saveRatings, fetchCurrentUser, GitHubApiError } from "./api.js";
 import { renderRestaurantDetail } from "./history.js";
@@ -11,7 +12,7 @@ import { extractPlaceKey, normalizeName, createMatcher, findDuplicateGroups } fr
 
 // Bump on every change that gets pushed, so a device still running a
 // cached older app.js is easy to spot (shown at the bottom of Settings).
-const APP_VERSION = "2026-10-11c";
+const APP_VERSION = "2026-10-11d";
 
 // Phones have no visible error console; surface anything uncaught in the
 // status line instead of failing silently.
@@ -29,7 +30,8 @@ let currentUser = null;
 let detailGroupKey = null; // groupKey of the restaurant currently shown in detail view
 let editingVisitId = null;
 let listView = "visited"; // "visited" | "wishlist"
-let wishlistTagFilter = ""; // "" = all tags
+let tagFilter = ""; // "" = all tags
+let tagColors = new Map(); // tag -> colour, recomputed whenever the list is rendered
 let formTags = []; // New rating form's current tag selection
 let showDuplicates = false;
 let nameSearch = ""; // normalized, "" = no search
@@ -144,8 +146,9 @@ const els = {
   importStatus: document.getElementById("import-status"),
   deleteSelectedButton: document.getElementById("btn-delete-selected"),
   mergeSelectedButton: document.getElementById("btn-merge-selected"),
-  wishlistTagFilterContainer: document.getElementById("wishlist-tag-filter-container"),
-  wishlistTagFilterSelect: document.getElementById("wishlist-tag-filter"),
+  tagFilterContainer: document.getElementById("tag-filter"),
+  updateBanner: document.getElementById("update-banner"),
+  updateButton: document.getElementById("btn-update-app"),
   viewToggle: document.getElementById("view-toggle"),
   showDuplicatesCheckbox: document.getElementById("show-duplicates"),
   nameSearchInput: document.getElementById("name-search"),
@@ -167,6 +170,7 @@ function refreshList() {
   // belongs in Rated; only all-wishlist restaurants stay in Wishlist. (A
   // wishlist entry merged/attached to a rated one must not linger there.)
   const allRestaurants = groupByRestaurant(state.ratings);
+  tagColors = computeTagColors(state.ratings);
   let sorted;
   let mode;
   const groupStartKeys = new Set();
@@ -178,13 +182,9 @@ function refreshList() {
     mode = "duplicates";
   } else {
     const inView = allRestaurants.filter((r) => (listView === "wishlist" ? !hasVisitedVisit(r) : hasVisitedVisit(r)));
-    if (listView === "wishlist") {
-      refreshWishlistTagOptions(inView.flatMap((r) => r.visits));
-    }
+    refreshTagFilter(inView);
     const filtered = inView.filter(
-      (r) =>
-        matchesNameSearch(r) &&
-        (listView !== "wishlist" || !wishlistTagFilter || r.visits.some((v) => (v.tags || []).includes(wishlistTagFilter)))
+      (r) => matchesNameSearch(r) && (!tagFilter || restaurantTags(r).includes(tagFilter))
     );
     sorted =
       listView === "wishlist"
@@ -194,7 +194,7 @@ function refreshList() {
   }
 
   els.viewToggle.hidden = showDuplicates;
-  els.wishlistTagFilterContainer.hidden = showDuplicates || listView !== "wishlist";
+  if (showDuplicates) els.tagFilterContainer.hidden = true;
 
   const allSelected = sorted.length > 0 && sorted.every((r) => selectedGroupKeys.has(r.groupKey));
   renderListHeader(els.restaurantTableHeaderRow, mode, (checked) => {
@@ -216,7 +216,11 @@ function refreshList() {
       updateBulkActionButtons();
     },
     selectedGroupKeys,
-    { groupStartKeys, emptyMessage: nameSearch ? "No restaurants match your search." : undefined }
+    {
+      groupStartKeys,
+      tagColors,
+      emptyMessage: nameSearch || tagFilter ? "No restaurants match your search or tag filter." : undefined,
+    }
   );
   els.sortControls.hidden = showDuplicates || listView === "wishlist";
   updateBulkActionButtons();
@@ -235,39 +239,29 @@ function allKnownTags() {
 // in-progress selection (formTags) while refreshing which tags are
 // available to pick from.
 function refreshTagPicker() {
-  renderTagPicker(els.tagsPicker, allKnownTags(), formTags, (next) => {
-    formTags = next;
-    refreshTagPicker();
-  });
+  renderTagPicker(
+    els.tagsPicker,
+    allKnownTags(),
+    formTags,
+    (next) => {
+      formTags = next;
+      refreshTagPicker();
+    },
+    tagColors
+  );
 }
 
-// Rebuilds the wishlist tag-filter dropdown from the distinct tags present
-// across all wishlist entries (not just the currently filtered ones, so
-// every available option stays choosable). Keeps the current selection if
-// it's still a valid tag, otherwise resets to "All tags".
-function refreshWishlistTagOptions(wishlistEntries) {
-  const tags = new Set();
-  for (const r of wishlistEntries) {
-    for (const t of r.tags || []) tags.add(t);
-  }
-  const sortedTags = [...tags].sort((a, b) => a.localeCompare(b));
-
-  if (wishlistTagFilter && !tags.has(wishlistTagFilter)) {
-    wishlistTagFilter = "";
-  }
-
-  els.wishlistTagFilterSelect.textContent = "";
-  const allOption = document.createElement("option");
-  allOption.value = "";
-  allOption.textContent = "All tags";
-  els.wishlistTagFilterSelect.appendChild(allOption);
-  for (const tag of sortedTags) {
-    const option = document.createElement("option");
-    option.value = tag;
-    option.textContent = tag;
-    els.wishlistTagFilterSelect.appendChild(option);
-  }
-  els.wishlistTagFilterSelect.value = wishlistTagFilter;
+// Tag chips for the current view (Rated or Wishlist): only tags that occur
+// there. A selected tag that no longer occurs resets the filter to "all".
+function refreshTagFilter(restaurantsInView) {
+  const tags = [...new Set(restaurantsInView.flatMap(restaurantTags))].sort((a, b) => a.localeCompare(b));
+  if (tagFilter && !tags.includes(tagFilter)) tagFilter = "";
+  els.tagFilterContainer.hidden = tags.length === 0;
+  renderTagFilter(els.tagFilterContainer, tags, tagColors, tagFilter, (tag) => {
+    tagFilter = tag;
+    selectedGroupKeys.clear();
+    refreshList();
+  });
 }
 
 function updateBulkActionButtons() {
@@ -287,7 +281,7 @@ function findRestaurant(groupKey) {
 function refreshDetail() {
   const restaurant = findRestaurant(detailGroupKey);
   if (!restaurant) {
-    showList();
+    goToList();
     return;
   }
   renderRestaurantDetail(
@@ -336,8 +330,28 @@ function refreshDetail() {
       },
     },
     editingVisitId,
-    allKnownTags()
+    allKnownTags(),
+    tagColors
   );
+}
+
+// Phone back button: the list is the "home" history entry. Opening a
+// restaurant or another tab adds exactly one entry on top (further
+// navigation replaces it), so back always returns to the list, and back
+// from the list leaves the app as usual. In-app "go to list" actions use
+// history.back() too, so the history never gets out of step.
+function isOnSubView() {
+  return Boolean(history.state && history.state.foodlogSubView);
+}
+
+function enterSubView() {
+  if (isOnSubView()) history.replaceState({ foodlogSubView: true }, "");
+  else history.pushState({ foodlogSubView: true }, "");
+}
+
+function goToList() {
+  if (isOnSubView()) history.back(); // popstate renders the list
+  else renderTab("list");
 }
 
 // The detail view lives inside the List tab, replacing the list itself.
@@ -347,6 +361,7 @@ function showDetail(groupKey) {
   els.listPanel.hidden = true;
   els.detailPanel.hidden = false;
   refreshDetail();
+  enterSubView();
   window.scrollTo(0, 0);
 }
 
@@ -358,12 +373,12 @@ function showList() {
 }
 
 function initDetailView() {
-  els.backToListButton.addEventListener("click", showList);
+  els.backToListButton.addEventListener("click", goToList);
 }
 
-// Tabs are separate screens: only one panel is visible at a time. Tapping
-// "List" always returns to the list itself, even from an open detail view.
-function showTab(name) {
+// Tabs are separate screens: only one panel is visible at a time. Showing
+// "list" always returns to the list itself, even from an open detail view.
+function renderTab(name) {
   for (const tab of document.querySelectorAll(".tab-bar .tab")) {
     const active = tab.dataset.tab === name;
     tab.classList.toggle("active", active);
@@ -376,7 +391,19 @@ function showTab(name) {
   window.scrollTo(0, 0);
 }
 
+function showTab(name) {
+  if (name === "list") {
+    goToList();
+    return;
+  }
+  renderTab(name);
+  enterSubView();
+}
+
 function initTabs() {
+  // A reload while on a sub view would otherwise leave a stale marker.
+  if (isOnSubView()) history.replaceState(null, "");
+  window.addEventListener("popstate", () => renderTab("list"));
   for (const tab of document.querySelectorAll(".tab-bar .tab")) {
     tab.addEventListener("click", () => showTab(tab.dataset.tab));
   }
@@ -897,14 +924,41 @@ function initSortControls() {
     refreshList();
   });
 
-  els.wishlistTagFilterSelect.addEventListener("change", () => {
-    wishlistTagFilter = els.wishlistTagFilterSelect.value;
-    refreshList();
-  });
+}
+
+// Asks the app's own site (GitHub Pages, same origin — no other service)
+// which APP_VERSION is live, bypassing the browser cache. Silent on
+// failure: being offline isn't worth an error message here.
+async function checkForAppUpdate() {
+  try {
+    const response = await fetch("js/app.js", { cache: "no-store" });
+    if (!response.ok) return;
+    const live = (await response.text()).match(/const APP_VERSION = "([^"]+)"/)?.[1];
+    els.updateBanner.hidden = !live || live === APP_VERSION;
+  } catch {
+    // offline or similar — try again on the next refresh
+  }
+}
+
+// Re-downloads every same-origin file this page loaded (page, CSS, all JS
+// modules) into the browser cache, then reloads, so no stale module is left.
+async function updateApp() {
+  els.updateButton.disabled = true;
+  const urls = new Set([
+    location.href.split("#")[0],
+    ...performance
+      .getEntriesByType("resource")
+      .map((entry) => entry.name)
+      .filter((url) => url.startsWith(location.origin)),
+  ]);
+  await Promise.all([...urls].map((url) => fetch(url, { cache: "reload" }).catch(() => {})));
+  location.reload();
 }
 
 function initToolbar() {
+  els.updateButton.addEventListener("click", updateApp);
   els.refreshButton.addEventListener("click", () => {
+    checkForAppUpdate();
     if (!hasCompleteSettings()) {
       setStatus(els.statusMessage, "Set your data repo and token in Settings first.", true);
       return;
@@ -938,6 +992,7 @@ async function init() {
   initBulkNotSame();
   initListFilters();
   refreshList();
+  checkForAppUpdate();
   if (!hasCompleteSettings()) {
     setStatus(els.statusMessage, "Set your data repo and token in Settings to sync ratings.");
     return;

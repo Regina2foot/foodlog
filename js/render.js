@@ -82,7 +82,7 @@ export function renderPricePicker(container, onChange) {
 // saved anywhere, so not in `allTags`) is still shown, checked, via the
 // allTags/selectedTags union, so it doesn't disappear on re-render.
 // onChange(nextSelectedTags) fires on every change.
-export function renderTagPicker(container, allTags, selectedTags, onChange) {
+export function renderTagPicker(container, allTags, selectedTags, onChange, colors = new Map()) {
   container.textContent = "";
   const displayTags = [...new Set([...allTags, ...selectedTags])].sort((a, b) => a.localeCompare(b));
 
@@ -98,7 +98,7 @@ export function renderTagPicker(container, allTags, selectedTags, onChange) {
       const next = checkbox.checked ? [...selectedTags, tag] : selectedTags.filter((t) => t !== tag);
       onChange(next);
     });
-    label.append(checkbox, document.createTextNode(tag));
+    label.append(checkbox, buildTagDot(tag, colors), document.createTextNode(tag));
     list.appendChild(label);
   }
   if (displayTags.length === 0) {
@@ -153,6 +153,7 @@ const VISITED_COLUMNS = [
   { label: "Name", className: "col-name" },
   { label: "Rating", className: "col-rating" },
   { label: "Price", className: "col-price" },
+  { label: "Tags", className: "col-tags" },
   { label: "Last edit", className: "col-date" },
   { label: "Comment", className: "col-comment" },
 ];
@@ -210,7 +211,7 @@ export function renderRestaurantList(
   mode = "visited",
   onToggleSelect,
   selectedKeys,
-  { groupStartKeys = new Set(), emptyMessage } = {}
+  { groupStartKeys = new Set(), emptyMessage, tagColors = new Map() } = {}
 ) {
   tbody.textContent = "";
 
@@ -240,15 +241,17 @@ export function renderRestaurantList(
     row.append(cell("col-select", checkbox), cell("col-name", restaurant.name));
 
     const latest = restaurant.latest;
+    const tags = restaurantTags(restaurant);
     if (mode === "wishlist") {
       row.append(
-        cell("col-tags", (latest.tags || []).join(", ")),
+        cell("col-tags", buildTagDots(tags, tagColors)),
         cell("col-date", formatDate(latest.created_at))
       );
     } else {
       row.append(
         cell("col-rating", buildStarsDisplay(latest.rating)),
         cell("col-price", latest.status === "wishlist" ? "" : formatPrice(latest.price_level)),
+        cell("col-tags", buildTagDots(tags, tagColors)),
         cell("col-date", formatDate(latest.visited_at)),
         cell("col-comment", latest.comment || "")
       );
@@ -263,6 +266,56 @@ export function renderRestaurantList(
     });
     tbody.appendChild(row);
   }
+}
+
+// All tags across a restaurant's visits, in first-seen order.
+export function restaurantTags(restaurant) {
+  return [...new Set(restaurant.visits.flatMap((v) => v.tags || []))];
+}
+
+export function buildTagDot(tag, colors) {
+  const dot = document.createElement("span");
+  dot.className = "tag-dot";
+  dot.style.background = colors.get(tag) || "currentColor";
+  return dot;
+}
+
+const MAX_TAG_DOTS = 3;
+
+// Small coloured circles (max 3, then "+N"); tag names go in the
+// accessible label / tooltip since the dots themselves carry no text.
+export function buildTagDots(tags, colors) {
+  const wrap = document.createElement("span");
+  wrap.className = "tag-dots";
+  if (tags.length === 0) return wrap;
+  wrap.title = tags.join(", ");
+  wrap.setAttribute("aria-label", `Tags: ${tags.join(", ")}`);
+  for (const tag of tags.slice(0, MAX_TAG_DOTS)) wrap.appendChild(buildTagDot(tag, colors));
+  if (tags.length > MAX_TAG_DOTS) {
+    const more = document.createElement("span");
+    more.className = "tag-dots-more";
+    more.textContent = `+${tags.length - MAX_TAG_DOTS}`;
+    wrap.appendChild(more);
+  }
+  return wrap;
+}
+
+// Tag filter as a row of tappable chips ("All" + one per tag). Doubles as
+// the colour legend for the dots in the list. onSelect("") = all tags.
+export function renderTagFilter(container, tags, colors, selected, onSelect) {
+  container.textContent = "";
+  const chip = (label, value, tag) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "filter-chip" + (value === selected ? " active" : "");
+    button.setAttribute("aria-pressed", String(value === selected));
+    if (tag) button.appendChild(buildTagDot(tag, colors));
+    button.appendChild(document.createTextNode(label));
+    button.addEventListener("click", () => onSelect(value === selected ? "" : value));
+    return button;
+  };
+  container.appendChild(chip("All tags", "", null));
+  for (const tag of tags) container.appendChild(chip(tag, tag, tag));
 }
 
 export function setStatus(el, message, isError = false) {
