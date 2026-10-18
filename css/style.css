@@ -611,8 +611,8 @@ tbody tr:hover {
 /* Fills most of the screen below the header and tabs; dvh accounts for a
    phone's collapsing address bar where supported. */
 .map-view {
-  height: calc(100vh - 13rem);
-  height: calc(100dvh - 13rem);
+  height: calc(100vh - 16rem);
+  height: calc(100dvh - 16rem);
   min-height: 320px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -665,4 +665,81 @@ tbody tr:hover {
 .leaflet-popup-content-wrapper,
 .leaflet-popup-tip {
   color: #222;
+}
+
+.map-search {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 0.4rem;
+}
+
+.map-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.4rem;
+  font-size: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+}
+
+.map-results {
+  list-style: none;
+  margin: 0 0 0.5rem;
+  padding: 0;
+  max-height: 11rem;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.map-result {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.map-results li:last-child .map-result {
+  border-bottom: none;
+}
+
+.pick-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  margin-bottom: 0.5rem;
+  border: 1px solid #c0392b;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+.map-tap-hint {
+  margin-left: 0.25rem;
+}
+
+.form-location {
+  margin-bottom: 0.75rem;
+}
+
+.form-location .hint {
+  margin: 0 0 0.35rem;
+}
+
+.location-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.6rem;
+  margin: 0.25rem 0 0.5rem;
 }

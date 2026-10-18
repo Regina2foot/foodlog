@@ -224,6 +224,8 @@ extensions are easy, rather than requiring larger rewrites.
   - `tagColors.js` — distinct per-tag colours (added later, Section 9)
   - `mapView.js` — the Map tab (Leaflet + OSM tiles, Section 15.3);
     not to be confused with `maps.js` (Google link handling)
+  - `geo.js` — place search / "what's here?" lookups via Nominatim
+    (Section 15.3), rate-limited and cached
   - `googleImport.js`, `settings.js` — Google Takeout import parsing;
     local settings storage + data-repo input parsing (added later)
   - `app.js` — wires the modules together, event handling, entry point
@@ -718,18 +720,35 @@ stay quick and reliable.
   first time; after that the view stays where the user left it. A line
   above the map says how many restaurants have a location. Not built yet:
   filters on the map (Rated/Wishlist, tags, search)
-- **Setting a location** on a restaurant (detail view → "Set location"):
+- **Search bar on the Map tab** (Nominatim, `geo.js`): results appear as
+  a list under the bar and as grey markers. Searches are **biased toward
+  the area currently visible on the map** but not limited to it, so
+  places anywhere in the world can be found (pan there, or put the city
+  into the search text). No fixed search-area setting. Searching only on
+  submit (never while typing), ≤1 request per second, identical requests
+  answered from memory
+- **Tapping the map** (not a marker) runs a reverse lookup of that spot.
+  Only if the nearest object is a venue (OSM category
+  amenity/shop/tourism/leisure) are its name, `osm` reference and exact
+  coordinates used; otherwise only its address is shown, with the tapped
+  coordinates and no name (a street or building name would be a wrong
+  restaurant name). Picking a result or tapping shows a red candidate
+  marker with a popup whose button depends on the mode below
+- **Setting a location** on a restaurant:
   - automatically from a pasted Google link if it contains coordinates
-    (`!3d…!4d…` or `@lat,lng`) — offline, no service involved
-  - search by name via Nominatim → pick from the results. Searches are
-    **biased toward the area currently visible on the map** but not
-    limited to it, so places anywhere in the world can be found (pan
-    there, or put the city into the search text). No fixed search-area
-    setting
-  - or tap the position on the map
-- **Adding from the map**: search a place, or tap a spot (reverse lookup
-  suggests the nearest place's name/address) → the New form opens
-  pre-filled with name, location, address, `osm`
+    (`!3d…!4d…` preferred, else `@lat,lng`) — offline, no service
+    involved; applied when saving the New form
+  - detail view → "Set location" / "Change location" switches to the Map
+    tab in *pick mode* (banner "Choose the location of …" with Cancel);
+    search or tap, then "Use as location of …" saves lat/lng (and
+    address/`osm` when known) and returns to the restaurant. "Show on
+    map" centres the map on its marker
+- **Adding from the map**: outside pick mode the popup button is "Add as
+  new restaurant" → the New tab opens pre-filled with name (if known)
+  and the location. The New form also has "Set location on map" (pick
+  mode for the form: "Use this location") and a way to clear it
+- Leaving the Map tab ends pick mode; the phone back button behaves as
+  for any other tab (Section 9)
 - **"Locate restaurants without a location"** helper (mainly right after
   an import, since Google exports carry no coordinates): asks **where
   these places are** (free text, e.g. "Berlin" or "Tokyo", per run; the
@@ -740,7 +759,7 @@ stay quick and reliable.
   review list (pick a result / tap on the map / skip). Saves in batches,
   not one commit per place. Can be stopped and resumed
 - Duplicate detection gains a location signal: similar name *and* within
-  ~50 m is a strong match; same `osm` reference = same place
+  ~60 m is a strong match; same `osm` reference = same place
 - "Open in Google Maps": uses `google_maps_url` if present, otherwise a
   Google Maps search link built from name + coordinates — opened like any
   link, no Google service is called by the app itself
@@ -774,7 +793,7 @@ stay quick and reliable.
        features ported to it, incl. the Google import
 3. [x] Map tab showing located restaurants (Leaflet 1.9.4 vendored in
        `vendor/leaflet/`, checksums verified — see its README)
-4. [ ] Setting locations (link coordinates, Nominatim search, tap on
+4. [x] Setting locations (link coordinates, Nominatim search, tap on
        map) + adding new restaurants from the map
 5. [ ] "Locate restaurants without a location" helper
 6. [ ] Fold the final state back into Sections 8/9/11/13 and retire the

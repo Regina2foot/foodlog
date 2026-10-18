@@ -267,7 +267,8 @@ function renderRestaurantForm(restaurant, allTags, tagColors, { onSave, onCancel
 
 // Detail view of one restaurant (CLAUDE.md Section 15.4). `restaurant` is a
 // restaurant view (data.js). `ui` = { editingRestaurant, addingVisit,
-// editingVisitId }. callbacks: onOpenMaps(url), onEditRestaurant(),
+// editingVisitId }. callbacks: onOpenMaps(url), onShowOnMap(),
+// onSetLocation(), onEditRestaurant(),
 // onSaveRestaurant(changes), onDeleteRestaurant(), onAddVisit(),
 // onSaveNewVisit(fields), onEditVisit(id), onSaveVisit(id, fields),
 // onDeleteVisit(id), onCancel() (closes whichever form is open).
@@ -286,7 +287,6 @@ export function renderRestaurantDetail(container, restaurant, callbacks, ui, all
     );
   } else {
     const info = el("div", { className: "restaurant-info" });
-    if (restaurant.address) info.appendChild(el("p", { className: "hint", textContent: restaurant.address }));
     if (restaurant.tags.length) {
       info.appendChild(
         el(
@@ -299,13 +299,25 @@ export function renderRestaurantDetail(container, restaurant, callbacks, ui, all
       );
     }
     if (restaurant.note) info.appendChild(el("p", { className: "restaurant-note", textContent: restaurant.note }));
-    info.appendChild(
-      el("p", {
-        className: "hint",
-        textContent: hasLocation(restaurant) ? "Location set." : "No location yet.",
-      })
-    );
     container.appendChild(info);
+
+    // Location row: address (or a plain status) + map actions.
+    const located = hasLocation(restaurant);
+    const locationRow = el("div", { className: "location-row" }, [
+      el("span", {
+        className: "hint",
+        textContent: located ? `📍 ${restaurant.address || "Location set"}` : "No location yet",
+      }),
+    ]);
+    if (located) {
+      const showButton = el("button", { type: "button", textContent: "Show on map" });
+      showButton.addEventListener("click", callbacks.onShowOnMap);
+      locationRow.appendChild(showButton);
+    }
+    const setButton = el("button", { type: "button", textContent: located ? "Change location" : "Set location" });
+    setButton.addEventListener("click", callbacks.onSetLocation);
+    locationRow.appendChild(setButton);
+    container.appendChild(locationRow);
 
     const googleLink = googleMapsLinkFor(restaurant);
     const mapsButton = el("button", { type: "button", textContent: "Open in Google Maps" });

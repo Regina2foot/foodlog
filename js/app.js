@@ -22,11 +22,12 @@ import { openMapsUrl, extractNameFromMapsUrl, extractCoordsFromMapsUrl } from ".
 import { restaurantsToCsv, downloadCsv } from "./csv.js";
 import { decodeImportFile, parseGoogleMapsExport, buildImport, applyImport } from "./googleImport.js";
 import { extractPlaceKey, normalizeName, createMatcher, findDuplicateGroups } from "./duplicates.js";
-import { renderMap } from "./mapView.js";
+import { renderMap, onMapTap, visibleArea, focusRestaurant, showSearchResults, showCandidate, clearPicking } from "./mapView.js";
+import { searchPlaces, lookupPosition } from "./geo.js";
 
 // Bump on every change that gets pushed, so a device still running a
 // cached older app.js is easy to spot (shown at the bottom of Settings).
-const APP_VERSION = "2026-10-18d";
+const APP_VERSION = "2026-10-18e";
 
 // Phones have no visible error console; surface anything uncaught in the
 // status line instead of failing silently.
@@ -73,6 +74,15 @@ const selectedIds = new Set();
 let detailId = null;
 const closedDetailUi = () => ({ editingRestaurant: false, addingVisit: false, editingVisitId: null });
 let detailUi = closedDetailUi();
+
+// Map tab "choose a location" mode (CLAUDE.md Section 15.3):
+// null = just browsing; { type: "restaurant", id, name } = for an existing
+// restaurant; { type: "form" } = for the New form.
+let mapPick = null;
+// Location chosen on the map for the New form: { lat, lng, address, osm }.
+let formLocation = null;
+// Restaurant to centre on the next time the map is drawn ("Show on map").
+let pendingFocusId = null;
 
 // Applies `mutate` (doc -> doc) and writes the result to the data repo,
 // re-fetching the latest document/sha first and retrying once on a 409
@@ -188,6 +198,14 @@ const els = {
   mapContainer: document.getElementById("map"),
   mapSummary: document.getElementById("map-summary"),
   mapPanel: document.querySelector('[data-tab-panel="map"]'),
+  mapPickBanner: document.getElementById("map-pick-banner"),
+  mapPickText: document.getElementById("map-pick-text"),
+  mapPickCancel: document.getElementById("btn-map-pick-cancel"),
+  mapSearchForm: document.getElementById("map-search-form"),
+  mapSearchInput: document.getElementById("map-search-input"),
+  mapResults: document.getElementById("map-results"),
+  formPickLocation: document.getElementById("btn-form-pick-location"),
+  formClearLocation: document.getElementById("btn-form-clear-location"),
 };
 
 function matchesNameSearch(restaurant) {
@@ -269,6 +287,167 @@ function refreshMap() {
       : shown === total
         ? `All ${total} restaurants are on the map.`
         : `${shown} of ${total} restaurants have a location and are shown here. The others don't have one yet.`;
+  els.mapPickBanner.hidden = !mapPick;
+  els.mapPickText.textContent = !mapPick
+    ? ""
+    : mapPick.type === "restaurant"
+      ? `Choose the location of "${mapPick.name}": search below or tap the map.`
+      : "Choose the location for your new restaurant: search below or tap the map.";
+  if (pendingFocusId) {
+    focusRestaurant(pendingFocusId);
+    pendingFocusId = null;
+  }
+}
+
+// --- Choosing a location on the map ---------------------------------------
+
+function el(tag, props = {}, children = []) {
+  const node = document.createElement(tag);
+  Object.assign(node, props);
+  for (const child of children) node.appendChild(child);
+  return node;
+}
+
+// Popup content for a searched or tapped place, with the action that fits
+// the current mode. Text is set via textContent only.
+function fillCandidateContent(box, place) {
+  box.textContent = "";
+  box.className = "map-popup";
+  box.appendChild(el("strong", { textContent: place.name || "Unnamed spot" }));
+  if (place.address) box.appendChild(el("span", { className: "hint", textContent: place.address }));
+  const action = el("button", { type: "button" });
+  if (mapPick?.type === "restaurant") {
+    action.textContent = `Use as location of "${mapPick.name}"`;
+    const id = mapPick.id;
+    action.addEventListener("click", () => applyLocationToRestaurant(id, place));
+  } else {
+    action.textContent = mapPick?.type === "form" ? "Use this location" : "Add as new restaurant";
+    action.addEventListener("click", () => applyLocationToForm(place));
+  }
+  box.appendChild(action);
+}
+
+function choosePlace(place) {
+  const box = el("div");
+  fillCandidateContent(box, place);
+  showCandidate(place.lat, place.lng, box);
+}
+
+async function handleMapTap(lat, lng) {
+  const box = el("div", { className: "map-popup" }, [el("span", { className: "hint", textContent: "Looking up this spot…" })]);
+  const handle = showCandidate(lat, lng, box);
+  let place = null;
+  try {
+    place = await lookupPosition(lat, lng);
+  } catch (err) {
+    setStatus(els.statusMessage, describeError(err, "Lookup failed"), true);
+  }
+  fillCandidateContent(box, place || { lat, lng, name: "", address: "", osm: null });
+  handle.update();
+}
+
+function renderMapResults(places) {
+  els.mapResults.textContent = "";
+  els.mapResults.hidden = places.length === 0;
+  for (const place of places) {
+    const button = el("button", { type: "button", className: "map-result" }, [
+      el("strong", { textContent: place.name || "(no name)" }),
+      el("span", { className: "hint", textContent: place.address }),
+    ]);
+    button.addEventListener("click", () => choosePlace(place));
+    els.mapResults.appendChild(el("li", {}, [button]));
+  }
+}
+
+async function runMapSearch() {
+  const query = els.mapSearchInput.value.trim();
+  if (!query) return;
+  els.mapSearchInput.blur();
+  setStatus(els.statusMessage, "Searching…");
+  try {
+    const places = await searchPlaces(query, visibleArea());
+    renderMapResults(places);
+    showSearchResults(places, choosePlace);
+    setStatus(
+      els.statusMessage,
+      places.length
+        ? `${places.length} result(s) — pick one in the list or on the map.`
+        : "Nothing found. Try adding the city to the search, or move the map there first."
+    );
+  } catch (err) {
+    setStatus(els.statusMessage, describeError(err, "Search failed"), true);
+  }
+}
+
+function endMapPick() {
+  mapPick = null;
+  clearPicking();
+  els.mapResults.hidden = true;
+  els.mapResults.textContent = "";
+}
+
+function locationFields(place) {
+  return { lat: place.lat, lng: place.lng, address: place.address || "", osm: place.osm || null };
+}
+
+async function applyLocationToRestaurant(id, place) {
+  try {
+    await writeWithConflictRetry((d) => updateRestaurant(d, id, locationFields(place)), { message: "Set restaurant location" });
+    endMapPick();
+    refreshList();
+    renderTab("list");
+    showDetail(id);
+    setStatus(els.statusMessage, "Location saved.");
+  } catch (err) {
+    setStatus(els.statusMessage, describeError(err, "Failed to save location"), true);
+  }
+}
+
+function applyLocationToForm(place) {
+  formLocation = locationFields(place);
+  if (!els.nameInput.value.trim() && place.name) els.nameInput.value = place.name;
+  endMapPick();
+  updateFormLocationHint();
+  showTab("new");
+}
+
+// The New form's location line: a place chosen on the map wins over
+// coordinates found in a pasted Google link.
+function updateFormLocationHint() {
+  const linkCoords = extractCoordsFromMapsUrl(els.mapsUrlInput.value.trim());
+  els.locationHint.textContent = formLocation
+    ? `📍 ${formLocation.address || "Location chosen on the map"}`
+    : linkCoords
+      ? "📍 Location found in the link — it will be saved with the restaurant."
+      : "No location yet.";
+  els.formClearLocation.hidden = !formLocation;
+}
+
+function initMapPicking() {
+  onMapTap(handleMapTap);
+  els.mapSearchForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    runMapSearch();
+  });
+  els.mapPickCancel.addEventListener("click", () => {
+    const pick = mapPick;
+    endMapPick();
+    if (pick?.type === "restaurant") {
+      renderTab("list");
+      showDetail(pick.id);
+    } else {
+      showTab("new");
+    }
+  });
+  els.formPickLocation.addEventListener("click", () => {
+    mapPick = { type: "form" };
+    els.mapSearchInput.value = els.nameInput.value.trim();
+    showTab("map");
+  });
+  els.formClearLocation.addEventListener("click", () => {
+    formLocation = null;
+    updateFormLocationHint();
+  });
 }
 
 function allKnownTags() {
@@ -350,6 +529,16 @@ function refreshDetail() {
       },
       onCancel: () => open({}),
       onEditRestaurant: () => open({ editingRestaurant: true }),
+      onShowOnMap: () => {
+        pendingFocusId = id;
+        showTab("map");
+      },
+      onSetLocation: () => {
+        mapPick = { type: "restaurant", id, name: restaurant.name };
+        els.mapSearchInput.value = restaurant.name;
+        if (hasLocation(restaurant)) pendingFocusId = id;
+        showTab("map");
+      },
       onSaveRestaurant: (changes) => {
         // A newly pasted long Google link can supply a missing location.
         const coords = hasLocation(restaurant) ? null : extractCoordsFromMapsUrl(changes.google_maps_url);
@@ -439,6 +628,8 @@ function renderTab(name) {
     panel.hidden = panel.dataset.tabPanel !== name;
   }
   if (name === "list") showList();
+  // Leaving the map ends any "choose a location" mode.
+  if (name !== "map" && mapPick) endMapPick();
   window.scrollTo(0, 0);
   if (name === "map") refreshMap();
 }
@@ -744,9 +935,7 @@ function initMapsLinkHelpers() {
       const extracted = extractNameFromMapsUrl(url);
       if (extracted) els.nameInput.value = extracted;
     }
-    const coords = extractCoordsFromMapsUrl(url);
-    els.locationHint.hidden = !coords;
-    els.locationHint.textContent = coords ? "Location found in the link — it will be saved with the restaurant." : "";
+    updateFormLocationHint();
   });
 }
 
@@ -821,6 +1010,7 @@ function buildFromForm() {
   };
   if (url) restaurant.google_maps_url = url;
   Object.assign(restaurant, extractCoordsFromMapsUrl(url) || {});
+  if (formLocation) Object.assign(restaurant, formLocation);
   if (els.wishlistCheckbox.checked) return { restaurant, visit: null };
   const price = Number(els.pricePicker.dataset.value || 0);
   const visit = {
@@ -896,7 +1086,8 @@ async function saveFromForm({ decision, sameAs, differentFrom }) {
     els.ratingPicker.dataset.value = "0";
     els.pricePicker.dataset.value = "0";
     els.visitedFieldsContainer.hidden = false;
-    els.locationHint.hidden = true;
+    formLocation = null;
+    updateFormLocationHint();
     formTags = [];
     initPickers();
     refreshList();
@@ -1014,6 +1205,7 @@ async function init() {
   initSettingsPanel();
   initImport();
   initMapsLinkHelpers();
+  initMapPicking();
   initWishlistToggle();
   initRatingForm();
   initSortControls();

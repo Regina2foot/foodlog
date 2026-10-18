@@ -79,11 +79,21 @@
 </section>
 
 <section class="tab-panel" data-tab-panel="map" hidden>
+  <div id="map-pick-banner" class="pick-banner" hidden>
+    <span id="map-pick-text"></span>
+    <button type="button" id="btn-map-pick-cancel">Cancel</button>
+  </div>
+  <form id="map-search-form" class="map-search" role="search">
+    <input type="search" id="map-search-input" placeholder="Search a place, e.g. Toscana Rome" autocomplete="off" enterkeyhint="search" />
+    <button type="submit">Search</button>
+  </form>
+  <ul id="map-results" class="map-results" hidden></ul>
   <p id="map-summary" class="hint map-summary"></p>
   <div id="map" class="map-view" aria-label="Map of restaurants"></div>
   <p class="hint map-legend">
     <span class="legend-dot legend-rated"></span> Rated
     <span class="legend-dot legend-wishlist"></span> Wishlist
+    <span class="map-tap-hint">· Tap the map to add a place there</span>
   </p>
 </section>
 
@@ -95,7 +105,6 @@
         Google Maps link (optional)
         <input type="text" id="field-maps-url" placeholder="https://maps.app.goo.gl/..." />
       </label>
-      <p id="field-location-hint" class="hint" hidden></p>
       <label>
         Name
         <input type="text" id="field-name" required placeholder="Restaurant name" />
@@ -104,6 +113,13 @@
         Auto-filled from a full Google Maps link when possible. Short share
         links (maps.app.goo.gl/...) don't carry a name, so type it yourself.
       </p>
+      <div class="form-location">
+        <p id="field-location-hint" class="hint">No location yet.</p>
+        <div class="form-actions">
+          <button type="button" id="btn-form-pick-location">Set location on map</button>
+          <button type="button" id="btn-form-clear-location" hidden>Remove location</button>
+        </div>
+      </div>
       <label>
         Tags
         <div id="field-tags" class="tag-picker"></div>

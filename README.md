@@ -74,6 +74,8 @@ Plain HTML/CSS/JavaScript, split into ES modules under `js/`:
 - `googleImport.js` – Google Takeout CSV import
 - `duplicates.js` – duplicate detection (same Google place / similar name)
 - `tagColors.js` – one distinct colour per tag (computed, not stored)
+- `mapView.js` – the Map tab (Leaflet + OpenStreetMap tiles)
+- `geo.js` – place search / lookup of a tapped spot (Nominatim)
 - `app.js` – wires the modules together, event handling, entry point
 
 See `CLAUDE.md` for the full project context, data model, and the
