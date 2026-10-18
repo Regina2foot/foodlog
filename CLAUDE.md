@@ -692,22 +692,16 @@ extra (people are used to it).
 - The app reads/writes `foodlog.json` only. The old `ratings.json` is
   never modified or deleted by the app
 
-### 15.2 Migration from `ratings.json`
+### 15.2 No migration — fresh start
 
-- When `foodlog.json` doesn't exist but `ratings.json` does, the app
-  offers a one-time **"Convert to the new format"** with a summary (how
-  many restaurants, visits, wishlist places) before writing anything. It
-  only creates `foodlog.json`; `ratings.json` stays as it is (backup, and
-  going back stays possible). Neither file existing = start empty; the
-  file is created on the first save
-- Grouping exactly as the old app did (link, `restaurant_id`, or the
-  entry on its own) → one restaurant per group. Name from the latest
-  entry; first non-empty link; coordinates if any link contains them;
-  tags = union of all entries' tags; created_by/at from the earliest entry
-- Each old `visited` entry → a visit (keeping its id, rating, price,
-  comment, date). Each old `wishlist` entry → no visit; its comment goes
-  into the restaurant's `note`
-- Old entry-level `not_same_as` → translated to restaurant ids
+The app isn't in daily use yet and the real source of the data is still
+the user's Google Maps lists, so there is **no conversion** of the old
+`ratings.json`. The new version starts with an empty `foodlog.json`
+(created on the first save) and the restaurants come back by re-importing
+the Google lists (Section 11.3 import, adapted to the new model). The old
+`ratings.json` is simply ignored — never read, changed or deleted by the
+app. Consequence: the import is the main way data gets in, so it has to
+stay quick and reliable.
 
 ### 15.3 Locations and the map
 
@@ -718,19 +712,24 @@ extra (people are used to it).
 - **Setting a location** on a restaurant (detail view → "Set location"):
   - automatically from a pasted Google link if it contains coordinates
     (`!3d…!4d…` or `@lat,lng`) — offline, no service involved
-  - search by name via Nominatim, limited to the configured **search
-    area** (e.g. a city; a Settings field stored in `localStorage` per
-    device, never hardcoded) → pick from the results
+  - search by name via Nominatim → pick from the results. Searches are
+    **biased toward the area currently visible on the map** but not
+    limited to it, so places anywhere in the world can be found (pan
+    there, or put the city into the search text). No fixed search-area
+    setting
   - or tap the position on the map
 - **Adding from the map**: search a place, or tap a spot (reverse lookup
   suggests the nearest place's name/address) → the New form opens
   pre-filled with name, location, address, `osm`
-- **"Locate restaurants without a location"** helper for the existing
-  ~400 entries: works through them one by one at ≤1 Nominatim request per
-  second (policy). A confident match (exactly one result in the search
-  area whose name matches) is accepted automatically; everything else
-  goes to a review list (pick a result / tap on the map / skip). Saves in
-  batches, not one commit per place. Can be stopped and resumed
+- **"Locate restaurants without a location"** helper (mainly right after
+  an import, since Google exports carry no coordinates): asks **where
+  these places are** (free text, e.g. "Berlin" or "Tokyo", per run; the
+  last value is suggested, stored in `localStorage`, never hardcoded),
+  then works through them one by one at ≤1 Nominatim request per second
+  (policy). A confident match (exactly one result in that area whose
+  name matches) is accepted automatically; everything else goes to a
+  review list (pick a result / tap on the map / skip). Saves in batches,
+  not one commit per place. Can be stopped and resumed
 - Duplicate detection gains a location signal: similar name *and* within
   ~50 m is a strong match; same `osm` reference = same place
 - "Open in Google Maps": uses `google_maps_url` if present, otherwise a
@@ -760,7 +759,8 @@ extra (people are used to it).
 ### 15.5 Milestones (commit after each, ask before each push)
 
 1. [x] Spec (this section) + privacy/security updates in Sections 3.1/4.1
-2. [ ] New data layer + migration + all existing features ported to it
+2. [ ] New data layer (`foodlog.json`, no migration) + all existing
+       features ported to it, incl. the Google import
 3. [ ] Map tab showing located restaurants (Leaflet vendored + verified)
 4. [ ] Setting locations (link coordinates, Nominatim search, tap on
        map) + adding new restaurants from the map
