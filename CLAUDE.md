@@ -744,6 +744,8 @@ stay quick and reliable.
 
 - List: Rated/Wishlist by visit count; rows show the latest visit's
   rating/price/date; tags and tag colours come from the restaurant
+- Sorting is per view: Rated by rating / name / date (latest visit);
+  Wishlist by name / date added (`created_at`), default name A→Z
 - New form: creates a restaurant; rating/price/comment/date fields create
   its first visit unless "Haven't been yet" is ticked. Adding another
   visit to an existing restaurant happens in its detail view ("Add

@@ -25,7 +25,7 @@ import { extractPlaceKey, normalizeName, createMatcher, findDuplicateGroups } fr
 
 // Bump on every change that gets pushed, so a device still running a
 // cached older app.js is easy to spot (shown at the bottom of Settings).
-const APP_VERSION = "2026-10-18b";
+const APP_VERSION = "2026-10-18c";
 
 // Phones have no visible error console; surface anything uncaught in the
 // status line instead of failing silently.
@@ -41,8 +41,24 @@ let doc = emptyDoc();
 let sha = null;
 let views = []; // restaurant views (data.js), rebuilt in refreshList()
 
-let sortField = "rating";
-let sortDir = "desc";
+// Each list view keeps its own sorting; the options differ because a
+// wishlist place has no visit (so no rating or visit date), only the date
+// it was added.
+const SORT_OPTIONS = {
+  visited: [
+    ["rating", "Rating"],
+    ["name", "Name"],
+    ["date", "Date"],
+  ],
+  wishlist: [
+    ["name", "Name"],
+    ["added", "Date added"],
+  ],
+};
+const sortState = {
+  visited: { field: "rating", dir: "desc" },
+  wishlist: { field: "name", dir: "asc" },
+};
 let currentUser = null;
 let listView = "visited"; // "visited" (Rated) | "wishlist"
 let tagFilter = ""; // "" = all tags
@@ -191,10 +207,8 @@ function refreshList() {
     const inView = views.filter((r) => (listView === "wishlist" ? r.isWishlist : !r.isWishlist));
     refreshTagFilter(inView);
     const filtered = inView.filter((r) => matchesNameSearch(r) && (!tagFilter || r.tags.includes(tagFilter)));
-    sorted =
-      listView === "wishlist"
-        ? sortRestaurants(filtered, "name", "asc")
-        : sortRestaurants(filtered, sortField, sortDir);
+    const { field, dir } = sortState[listView];
+    sorted = sortRestaurants(filtered, field, dir);
     mode = listView;
   }
 
@@ -227,7 +241,8 @@ function refreshList() {
       emptyMessage: nameSearch || tagFilter ? "No restaurants match your search or tag filter." : undefined,
     }
   );
-  els.sortControls.hidden = showDuplicates || listView === "wishlist";
+  els.sortControls.hidden = showDuplicates;
+  syncSortControls();
   updateBulkActionButtons();
   refreshTagPicker();
 }
@@ -887,16 +902,34 @@ function initRatingForm() {
   });
 }
 
+// Shows the current view's sort options and state in the shared controls.
+function syncSortControls() {
+  const options = SORT_OPTIONS[listView];
+  const { field, dir } = sortState[listView];
+  if (els.sortFieldSelect.dataset.view !== listView) {
+    els.sortFieldSelect.textContent = "";
+    for (const [value, label] of options) {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = label;
+      els.sortFieldSelect.appendChild(option);
+    }
+    els.sortFieldSelect.dataset.view = listView;
+  }
+  els.sortFieldSelect.value = field;
+  els.sortDirButton.textContent = dir === "desc" ? "↓" : "↑";
+  els.sortDirButton.dataset.dir = dir;
+}
+
 function initSortControls() {
   els.sortFieldSelect.addEventListener("change", () => {
-    sortField = els.sortFieldSelect.value;
+    sortState[listView].field = els.sortFieldSelect.value;
     refreshList();
   });
 
   els.sortDirButton.addEventListener("click", () => {
-    sortDir = sortDir === "desc" ? "asc" : "desc";
-    els.sortDirButton.textContent = sortDir === "desc" ? "↓" : "↑";
-    els.sortDirButton.dataset.dir = sortDir;
+    const state = sortState[listView];
+    state.dir = state.dir === "desc" ? "asc" : "desc";
     refreshList();
   });
 }
