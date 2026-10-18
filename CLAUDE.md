@@ -11,7 +11,8 @@ text/UI, and communication with Claude Code should all be in English.
 ## 1. Goal
 
 **Foodlog** is a small web app to rate restaurants (0–5 stars, comment),
-sortable by rating, with Google Maps integration. Currently just for me; later up to
+sortable by rating, with a map (OpenStreetMap) and optional Google Maps
+links. Currently just for me; later up to
 about 10 friends should be able to add their own ratings and see
 everyone's ratings. Runs entirely in the browser with no installation. I
 want to try the app out myself first and then gradually add more features
@@ -73,9 +74,22 @@ before considering the step done.
 ### 3.1 In the app
 
 - No analytics, tracking, or advertising scripts of any kind
-- No communication with external services other than the GitHub API (no
-  Sentry, no error-tracking service, no third-party CDNs that could
-  collect usage data)
+- No communication with external services other than the ones listed
+  here (no Sentry, no error-tracking service, no third-party CDNs that
+  could collect usage data). Allowed, each approved explicitly (2026-10):
+  - **GitHub API** — reading/writing the data file (Section 5)
+  - **OpenStreetMap tiles** (`tile.openstreetmap.org`) — map images for
+    the Map tab. OSM sees the viewer's IP address and which map area is
+    being viewed. Must follow the OSM tile usage policy (attribution
+    shown, no bulk downloading/prefetching)
+  - **Nominatim** (`nominatim.openstreetmap.org`) — place search and
+    reverse lookup. Sends the typed search text, or a restaurant's name
+    plus the configured search area, or a tapped map position. Never
+    sends ratings, comments, tags or the token. Must follow the Nominatim
+    usage policy: at most 1 request per second, no automatic searching
+    while typing, results not re-requested unnecessarily
+- The app's own site (GitHub Pages, same origin) is also contacted, e.g.
+  for the update check (Section 9) — not an external service
 - The personal GitHub token is stored only locally in the browser
   (`localStorage`), never transmitted anywhere else, and never displayed
   in plain text anywhere (except in its own input field while typing it)
@@ -125,6 +139,10 @@ always ask (Section 2.1), never just accept it.
 - Don't include external scripts/libraries that haven't been explicitly
   agreed on beforehand; if a library is ever needed, only use established,
   official sources with a fixed version number
+- **Leaflet** (map library) is approved (2026-10). It's copied into the
+  repo (`vendor/leaflet/`) at one pinned version, and the files' checksums
+  are verified against the official published ones before committing —
+  never loaded from a CDN at runtime. Upgrading means repeating that check
 - Tokens get only the minimum necessary permissions (see fine-grained PAT
   in Section 5, scoped to exactly one repo)
 
@@ -245,6 +263,10 @@ exist and how the app should use them at runtime (Sections 3, 8, 9).
 
 ## 8. Data model
 
+> **Being replaced** by the restaurants + visits model in Section 15
+> (redesign in progress). This section describes the current/legacy
+> `ratings.json` format, which stays readable for the one-time migration.
+
 File `ratings.json` in the data repo, a JSON array of objects. Each
 object represents **one visit/rating**, not one restaurant — the same
 restaurant can be rated again later (e.g. because quality or price
@@ -311,6 +333,10 @@ below) — see Section 9 for how the list and detail view use this.
   (API call `GET /user` with the entered token)
 
 ## 9. Core features – Phase 1 (just me)
+
+> Describes the app as built before the Section 15 redesign. Features keep
+> working after it, but their data handling moves to the new model —
+> Section 15 lists what changes.
 
 - **Layout**: the phone is the main use case. Separate tabs (one screen at
   a time): **List** (start tab) · **New** (new rating) · **Settings** ·
@@ -600,3 +626,145 @@ still running a cached older `app.js`.
 6. Add a short README with setup notes for future friends.
 7. Only after that: tackle later milestones/optional items from Section
    11, if desired.
+
+## 15. Redesign v2: restaurants + visits, and a map (decided 2026-10, in progress)
+
+**Why.** A restaurant's identity was its Google Maps link, which caused
+most of the complexity (grouping by exact link, `restaurant_id` for
+merges, place-ID tricks, short links that can't be compared) and gives no
+coordinates for a map. Google's exports don't contain coordinates either
+(Takeout list CSVs have only title/note/URL/tags/comment, and their URLs
+carry a place ID but no lat/lng). Decided: separate restaurants from
+visits, give restaurants a location, keep the Google link as an optional
+extra (people are used to it).
+
+### 15.1 Data model — `foodlog.json` in the data repo
+
+```json
+{
+  "version": 2,
+  "restaurants": [
+    {
+      "id": "r1a2b3c4",
+      "name": "Trattoria Milano",
+      "lat": 52.5123, "lng": 13.4567,
+      "address": "Musterstraße 1, Berlin",
+      "google_maps_url": "https://maps.app.goo.gl/xyz123",
+      "osm": "node/123456789",
+      "tags": ["Italian", "Date night"],
+      "note": "Recommended by a friend",
+      "not_same_as": ["r9z8y7x6"],
+      "created_by": "github-username",
+      "created_at": "2026-09-20T18:32:00Z"
+    }
+  ],
+  "visits": [
+    {
+      "id": "a1b2c3d4",
+      "restaurant_id": "r1a2b3c4",
+      "rating": 4,
+      "price_level": 2,
+      "comment": "Great pasta, loud on weekends",
+      "visited_at": "2026-09-20",
+      "created_by": "github-username",
+      "created_at": "2026-09-20T18:32:00Z"
+    }
+  ]
+}
+```
+
+- Restaurant fields: only `id` and `name` are required. `lat`/`lng`
+  (numbers) are null/absent until the place is located. `address` and
+  `osm` (OpenStreetMap reference, e.g. `node/123`) come from a Nominatim
+  search result. `google_maps_url` is optional, stored exactly as pasted.
+  `tags` describe the restaurant (cuisine, occasion, source list such as
+  "Gregors recommendations"). `note` is free text about the restaurant
+  itself (e.g. who recommended it), as opposed to a visit's comment.
+  `not_same_as` lists restaurant ids the user said are different places
+- Visit fields: `rating` 0–5 (whole number, required on a visit),
+  `price_level` 1–3 or null, `comment`, `visited_at` (YYYY-MM-DD)
+- **Wishlist = a restaurant with no visits.** No `status` field anymore.
+  Rated = has at least one visit
+- **Merge** = move all visits of the other restaurant(s) onto one, union
+  the tags, join the notes, fill empty fields (location, link, address)
+  from the others, then delete the others. No `restaurant_id` override
+- Section 6's "robust to missing fields" rule still applies to every field
+- The app reads/writes `foodlog.json` only. The old `ratings.json` is
+  never modified or deleted by the app
+
+### 15.2 Migration from `ratings.json`
+
+- When `foodlog.json` doesn't exist but `ratings.json` does, the app
+  offers a one-time **"Convert to the new format"** with a summary (how
+  many restaurants, visits, wishlist places) before writing anything. It
+  only creates `foodlog.json`; `ratings.json` stays as it is (backup, and
+  going back stays possible). Neither file existing = start empty; the
+  file is created on the first save
+- Grouping exactly as the old app did (link, `restaurant_id`, or the
+  entry on its own) → one restaurant per group. Name from the latest
+  entry; first non-empty link; coordinates if any link contains them;
+  tags = union of all entries' tags; created_by/at from the earliest entry
+- Each old `visited` entry → a visit (keeping its id, rating, price,
+  comment, date). Each old `wishlist` entry → no visit; its comment goes
+  into the restaurant's `note`
+- Old entry-level `not_same_as` → translated to restaurant ids
+
+### 15.3 Locations and the map
+
+- **Map tab** (between List and New): Leaflet + OpenStreetMap tiles, one
+  marker per located restaurant, rated vs. wishlist visually distinct,
+  tap → small popup → open the restaurant. Same filters as the list
+  where it makes sense (Rated/Wishlist, tags, search)
+- **Setting a location** on a restaurant (detail view → "Set location"):
+  - automatically from a pasted Google link if it contains coordinates
+    (`!3d…!4d…` or `@lat,lng`) — offline, no service involved
+  - search by name via Nominatim, limited to the configured **search
+    area** (e.g. a city; a Settings field stored in `localStorage` per
+    device, never hardcoded) → pick from the results
+  - or tap the position on the map
+- **Adding from the map**: search a place, or tap a spot (reverse lookup
+  suggests the nearest place's name/address) → the New form opens
+  pre-filled with name, location, address, `osm`
+- **"Locate restaurants without a location"** helper for the existing
+  ~400 entries: works through them one by one at ≤1 Nominatim request per
+  second (policy). A confident match (exactly one result in the search
+  area whose name matches) is accepted automatically; everything else
+  goes to a review list (pick a result / tap on the map / skip). Saves in
+  batches, not one commit per place. Can be stopped and resumed
+- Duplicate detection gains a location signal: similar name *and* within
+  ~50 m is a strong match; same `osm` reference = same place
+- "Open in Google Maps": uses `google_maps_url` if present, otherwise a
+  Google Maps search link built from name + coordinates — opened like any
+  link, no Google service is called by the app itself
+
+### 15.4 What changes in existing features
+
+- List: Rated/Wishlist by visit count; rows show the latest visit's
+  rating/price/date; tags and tag colours come from the restaurant
+- New form: creates a restaurant; rating/price/comment/date fields create
+  its first visit unless "Haven't been yet" is ticked. Adding another
+  visit to an existing restaurant happens in its detail view ("Add
+  visit"), or via "Add as another visit" in the duplicate warning
+- Detail view: restaurant header (name, address, tags, note, Google link,
+  location with "Show on map" / "Set location", Edit restaurant), then the
+  visits (cards, chart) with Add visit / Edit / Delete
+- Import (Takeout CSV): creates restaurants (+ a visit when the note has
+  an `N/10` rating, comment kept verbatim as before); a place's note
+  becomes the restaurant `note` when there's no rating; the import tag
+  goes onto the restaurants. Same-place skipping and the similar-name
+  review keep working, now per restaurant
+- CSV export: one row per visit with the restaurant's fields, plus one
+  row per wishlist restaurant with empty visit columns
+- Bulk select / Delete / Merge / Not the same: per restaurant
+
+### 15.5 Milestones (commit after each, ask before each push)
+
+1. [x] Spec (this section) + privacy/security updates in Sections 3.1/4.1
+2. [ ] New data layer + migration + all existing features ported to it
+3. [ ] Map tab showing located restaurants (Leaflet vendored + verified)
+4. [ ] Setting locations (link coordinates, Nominatim search, tap on
+       map) + adding new restaurants from the map
+5. [ ] "Locate restaurants without a location" helper
+6. [ ] Fold the final state back into Sections 8/9/11/13 and retire the
+       "legacy" notes
+
