@@ -11,6 +11,8 @@
 // Mac OS Roman) depending on how it was produced/touched before import, so
 // decoding falls back accordingly.
 
+import { extractCoordsFromMapsUrl } from "./maps.js";
+
 const KNOWN_HEADERS = {
   titel: "name",
   title: "name",
@@ -167,69 +169,81 @@ export function parseGoogleMapsExport(text) {
   };
 }
 
-// Converts generic parsed entries into ratings.json-shaped objects, skipping
-// any the caller already knows as the same Google place (`isKnownPlace(url)`
-// — see duplicates.js), so a repeat or overlapping import adds no duplicates.
-export function buildRatingsFromImport(entries, { createdBy, isKnownPlace, generateId }) {
-  const toAdd = [];
+// Turns parsed entries into new restaurants (CLAUDE.md Section 15.4): one
+// restaurant per place, plus a first visit when the note carried an N/10
+// rating (its comment keeps the note verbatim). Without a rating the note
+// becomes the restaurant's own note, i.e. a wishlist place. `bulkTag` (the
+// import tag) is added to every restaurant. Places the caller already knows
+// as the same Google place (`isKnownPlace(url)`) are skipped.
+export function buildImport(entries, { createdBy, isKnownPlace, generateId, bulkTag }) {
+  const items = [];
   let skippedDuplicates = 0;
+  const now = new Date();
+  const createdAt = now.toISOString();
 
   for (const entry of entries) {
     if (entry.google_maps_url && isKnownPlace(entry.google_maps_url)) {
       skippedDuplicates++;
       continue;
     }
-    const isWishlist = entry.rating === null;
-    const now = new Date();
-    toAdd.push({
+    const rated = entry.rating !== null;
+    const coords = extractCoordsFromMapsUrl(entry.google_maps_url);
+    const restaurant = {
       id: generateId(),
       name: entry.name || "(unnamed)",
       google_maps_url: entry.google_maps_url,
-      status: isWishlist ? "wishlist" : "visited",
-      rating: isWishlist ? null : entry.rating,
-      price_level: null,
-      comment: entry.comment || "",
-      tags: entry.tags,
-      // The real visit date isn't in the export, so a rated entry gets the
-      // import date instead (not applicable to a wishlist entry, which
-      // hasn't been visited at all). See CLAUDE.md Section 11.3.
-      visited_at: isWishlist ? null : now.toISOString().slice(0, 10),
+      tags: [...new Set([...(entry.tags || []), ...(bulkTag ? [bulkTag] : [])])],
+      note: rated ? "" : entry.comment || "",
       created_by: createdBy,
-      created_at: now.toISOString(),
-    });
+      created_at: createdAt,
+    };
+    if (coords) Object.assign(restaurant, coords);
+    // The export has no real visit date, so a rated place gets the import
+    // date (Section 11.3).
+    const visit = rated
+      ? {
+          id: generateId(),
+          restaurant_id: restaurant.id,
+          rating: entry.rating,
+          price_level: null,
+          comment: entry.comment || "",
+          visited_at: createdAt.slice(0, 10),
+          created_by: createdBy,
+          created_at: createdAt,
+        }
+      : null;
+    items.push({ restaurant, visit });
   }
 
-  return { toAdd, skippedDuplicates };
+  return { items, skippedDuplicates };
 }
 
-// Applies an import to `ratings` once similar-name matches have been
-// reviewed. Each item: { rating, decision: "add" | "same", matchIds }.
-// - "add": imported as a new restaurant. If it was reviewed as different
-//   from existing ones (matchIds set), that's remembered via not_same_as.
-// - "same": matchIds are the existing restaurant's entry ids. Those without
-//   a Maps link get the imported one; `bulkTag` is added to them; and only
-//   if the imported place carries its own rating is it added as another
-//   visit, linked through a shared restaurant_id.
-// Ids that no longer exist (deleted meanwhile) fall back to "add".
-export function applyImport(ratings, items, { bulkTag, generateId }) {
-  let next = [...ratings];
-  for (const { rating, decision, matchIds = [] } of items) {
-    const existing = next.filter((r) => matchIds.includes(r.id));
-    if (decision !== "same" || existing.length === 0) {
-      next.push(matchIds.length > 0 ? { ...rating, not_same_as: [...matchIds] } : rating);
+// Applies a reviewed import plan to the document. Each item:
+// { restaurant, visit, decision: "add" | "same", sameAs, differentFrom }.
+// - "add": the new restaurant (+ visit). `differentFrom` (restaurant ids the
+//   user said it is *not*) is remembered in not_same_as.
+// - "same": `sameAs` is the existing restaurant's id. It gets the imported
+//   link if it had none, missing coordinates, the imported tags, the note if
+//   it had none; the imported visit (only if the place carried a rating) is
+//   added to it. If it no longer exists, falls back to "add".
+export function applyImport(doc, plan) {
+  let next = { ...doc, restaurants: [...doc.restaurants], visits: [...doc.visits] };
+  for (const { restaurant, visit, decision, sameAs, differentFrom = [] } of plan) {
+    const existing = decision === "same" ? next.restaurants.find((r) => r.id === sameAs) : null;
+    if (!existing) {
+      next.restaurants.push(differentFrom.length ? { ...restaurant, not_same_as: [...differentFrom] } : restaurant);
+      if (visit) next.visits.push(visit);
       continue;
     }
-    const addVisit = rating.status === "visited";
-    const restaurantId = addVisit ? existing.find((r) => r.restaurant_id)?.restaurant_id || generateId() : null;
-    next = next.map((r) => {
-      if (!matchIds.includes(r.id)) return r;
-      const updated = { ...r };
-      if (!updated.google_maps_url && rating.google_maps_url) updated.google_maps_url = rating.google_maps_url;
-      if (restaurantId && !updated.restaurant_id) updated.restaurant_id = restaurantId;
-      if (bulkTag && !(updated.tags || []).includes(bulkTag)) updated.tags = [...(updated.tags || []), bulkTag];
-      return updated;
-    });
-    if (addVisit) next.push({ ...rating, restaurant_id: restaurantId });
+    const updated = { ...existing, tags: [...new Set([...(existing.tags || []), ...(restaurant.tags || [])])] };
+    if (!updated.google_maps_url && restaurant.google_maps_url) updated.google_maps_url = restaurant.google_maps_url;
+    if (!Number.isFinite(updated.lat) && Number.isFinite(restaurant.lat)) {
+      updated.lat = restaurant.lat;
+      updated.lng = restaurant.lng;
+    }
+    if (!updated.note && restaurant.note) updated.note = restaurant.note;
+    next.restaurants = next.restaurants.map((r) => (r.id === existing.id ? updated : r));
+    if (visit) next.visits.push({ ...visit, restaurant_id: existing.id });
   }
   return next;
 }

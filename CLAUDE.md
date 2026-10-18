@@ -36,7 +36,7 @@ applies especially to:
 - Anything related to privacy, security, tokens, or access rights (see
   Sections 3 and 4)
 - UI/UX decisions where there are several plausible options
-- Changes to the data schema (`ratings.json` structure)
+- Changes to the data schema (`foodlog.json` structure, Section 15.1)
 - Anything that could overwrite or delete existing data
 - Larger restructuring of existing core logic (see Section 6)
 
@@ -210,7 +210,8 @@ extensions are easy, rather than requiring larger rewrites.
   Works directly in the browser, no build tool needed, so it fits the
   constraint from Section 5. Suggested split:
   - `api.js` — GitHub API access (read/write/conflict handling)
-  - `state.js` — holding and updating the current list of ratings
+  - `data.js` — the data document (restaurants + visits, Section 15.1)
+    and all changes to it, as pure functions (replaced `state.js`)
   - `render.js` — rendering the list/UI updates
   - `sort.js` — sorting and filtering logic
   - `csv.js` — CSV export
@@ -246,6 +247,8 @@ extensions are easy, rather than requiring larger rewrites.
       account used to actually use the app, not the development-only
       account (see Section 5)
 - [x] In the data repo, create a file `ratings.json` with content `[]`
+      (no longer needed: the v2 app creates `foodlog.json` itself on the
+      first save, Section 15.2)
 - [x] Generate a fine-grained PAT: Repository access limited to
       `foodlog-data`, Permissions → Contents: Read and write. Saved
       securely (not in this repo, not shared with Claude Code)
@@ -265,7 +268,8 @@ exist and how the app should use them at runtime (Sections 3, 8, 9).
 
 > **Being replaced** by the restaurants + visits model in Section 15
 > (redesign in progress). This section describes the current/legacy
-> `ratings.json` format, which stays readable for the one-time migration.
+> `ratings.json` format, which the v2 app no longer reads (no migration,
+> Section 15.2).
 
 File `ratings.json` in the data repo, a JSON array of objects. Each
 object represents **one visit/rating**, not one restaurant — the same
@@ -503,7 +507,7 @@ pick (Section 2.1).
 ### 11.2 Smaller optional additions
 
 - Additional automated backup: a small **Python script** that, e.g.,
-  weekly via a GitHub Action, saves `ratings.json` as an extra CSV
+  weekly via a GitHub Action, saves `foodlog.json` as an extra CSV
   snapshot in the repo (defense in depth, in addition to the Git history)
 - [x] Filter by tag — built for both Rated and Wishlist views (tag chips)
 - [x] Search by name — built (Section 9), all views
@@ -563,8 +567,8 @@ pick (Section 2.1).
 
 - Plain HTML/CSS/JavaScript, no framework, no build tool
 - Access to rating data exclusively via the GitHub Contents API:
-  - Read: `GET /repos/{owner}/{data-repo}/contents/ratings.json`
-  - Write: `PUT /repos/{owner}/{data-repo}/contents/ratings.json`
+  - Read: `GET /repos/{owner}/{data-repo}/contents/foodlog.json`
+  - Write: `PUT /repos/{owner}/{data-repo}/contents/foodlog.json`
     (content base64-encoded, with the current `sha`)
   - `{owner}` and `{data-repo}` come from the runtime settings (Section
     9), never hardcoded in the source (Section 3.1)
@@ -759,7 +763,7 @@ stay quick and reliable.
 ### 15.5 Milestones (commit after each, ask before each push)
 
 1. [x] Spec (this section) + privacy/security updates in Sections 3.1/4.1
-2. [ ] New data layer (`foodlog.json`, no migration) + all existing
+2. [x] New data layer (`foodlog.json`, no migration) + all existing
        features ported to it, incl. the Google import
 3. [ ] Map tab showing located restaurants (Leaflet vendored + verified)
 4. [ ] Setting locations (link coordinates, Nominatim search, tap on

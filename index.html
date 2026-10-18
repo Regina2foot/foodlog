@@ -78,12 +78,13 @@
 
 <section class="tab-panel" data-tab-panel="new" hidden>
   <div id="form-panel">
-    <h2>New rating</h2>
+    <h2>New restaurant</h2>
     <form id="rating-form">
       <label>
         Google Maps link (optional)
         <input type="text" id="field-maps-url" placeholder="https://maps.app.goo.gl/..." />
       </label>
+      <p id="field-location-hint" class="hint" hidden></p>
       <label>
         Name
         <input type="text" id="field-name" required placeholder="Restaurant name" />
@@ -92,13 +93,17 @@
         Auto-filled from a full Google Maps link when possible. Short share
         links (maps.app.goo.gl/...) don't carry a name, so type it yourself.
       </p>
-      <label class="checkbox-label">
-        <input type="checkbox" id="field-wishlist" />
-        Add to wishlist (haven't visited yet)
-      </label>
       <label>
         Tags
         <div id="field-tags" class="tag-picker"></div>
+      </label>
+      <label>
+        Note about this place (optional)
+        <textarea id="field-note" rows="2" placeholder="e.g. who recommended it"></textarea>
+      </label>
+      <label class="checkbox-label">
+        <input type="checkbox" id="field-wishlist" />
+        Haven't been yet (add to wishlist)
       </label>
       <div id="visited-fields">
         <label>
@@ -110,8 +115,8 @@
           <span id="field-price" class="price-picker" data-value="0" role="radiogroup" aria-label="Price level"></span>
         </label>
         <label>
-          Comment
-          <textarea id="field-comment" rows="2" placeholder="Optional comment"></textarea>
+          Comment on this visit
+          <textarea id="field-comment" rows="2" placeholder="How was it?"></textarea>
         </label>
         <label>
           Visit date
@@ -120,7 +125,7 @@
       </div>
       <div id="duplicate-warning" class="duplicate-warning" hidden></div>
       <div class="form-actions">
-        <button type="submit">Save rating</button>
+        <button type="submit">Save</button>
       </div>
     </form>
   </div>
@@ -174,7 +179,7 @@
       <li>Pick the CSV for the list you want below.</li>
     </ol>
     <p class="hint">
-      Each place becomes a wishlist entry, unless its note starts with a
+      Each place becomes a wishlist place, unless its note starts with a
       rating like "7/10" (common if you've been noting your own ratings in
       Google Maps already) — those import as rated visits instead, with the
       rating converted to 0–5 stars: 0–5/10 → 0 stars, then 6/10 → 1 star up

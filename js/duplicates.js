@@ -2,9 +2,10 @@
 // short share links (maps.app.goo.gl/...) can't be resolved without asking
 // Google (CLAUDE.md Section 3.1), so those fall back to name similarity.
 //
-// "place" match: same Google place (identical link, or the same place ID
-// embedded in two different long links). Reliable.
-// "name" match: similar names only. A hint, never acted on automatically.
+// Matches are between restaurants (CLAUDE.md Sections 9, 15.3): same
+// Google place / same OSM reference ("place"), similar name at the same
+// spot ("nearby"), or similar name only ("name"). Never acted on
+// automatically — the user decides.
 
 // Long Google Maps links embed a feature ID "0x<hex>:0x<hex>" (e.g.
 // "!1s0x47a8...:0x17f8..." or "ftid=0x...:0x..."); its second half is the
@@ -91,82 +92,87 @@ export function namesMatch(a, b) {
   return wordSetsMatch(significantWords(normalizeName(a)), significantWords(normalizeName(b)));
 }
 
-function profileOf(visits) {
-  const urls = new Set();
-  const placeKeys = new Set();
-  const wordSets = new Map();
-  for (const v of visits) {
-    const url = (v.google_maps_url || "").trim();
-    if (url) urls.add(url);
-    const key = extractPlaceKey(url);
-    if (key) placeKeys.add(key);
-    const words = significantWords(normalizeName(v.name));
-    if (words.length) wordSets.set(words.join(" "), words);
-  }
-  return { urls, placeKeys, wordSets: [...wordSets.values()] };
+// Distance in metres between two { lat, lng } points (haversine).
+export function distanceMeters(a, b) {
+  const rad = (d) => (d * Math.PI) / 180;
+  const dLat = rad(b.lat - a.lat);
+  const dLng = rad(b.lng - a.lng);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * 6371000 * Math.asin(Math.sqrt(h));
 }
 
+// Similar name *and* this close = very likely the same place.
+const SAME_SPOT_METERS = 60;
+// Further apart than this = different places, whatever the name says
+// (e.g. two branches of a chain).
+const DIFFERENT_PLACE_METERS = 300;
+
+// Works on anything restaurant-shaped: { name, google_maps_url, osm, lat, lng }.
+function profileOf(r) {
+  const url = (r.google_maps_url || "").trim();
+  const placeKey = extractPlaceKey(url);
+  const words = significantWords(normalizeName(r.name));
+  return {
+    url: url || null,
+    placeKey,
+    osm: r.osm || null,
+    coords: Number.isFinite(r.lat) && Number.isFinite(r.lng) ? { lat: r.lat, lng: r.lng } : null,
+    words,
+  };
+}
+
+// "place" = same Google link/place ID or same OSM reference (reliable).
+// "nearby" = similar name and within SAME_SPOT_METERS (strong).
+// "name" = similar name only (a hint). null = not a match.
 function compareProfiles(p, q) {
-  for (const u of p.urls) if (q.urls.has(u)) return "place";
-  for (const k of p.placeKeys) if (q.placeKeys.has(k)) return "place";
-  // Both point at known places, and they're different ones: e.g. two
-  // branches of a chain. Same name doesn't make them duplicates.
-  if (p.placeKeys.size > 0 && q.placeKeys.size > 0) return null;
-  for (const a of p.wordSets) {
-    for (const b of q.wordSets) {
-      if (wordSetsMatch(a, b)) return "name";
-    }
-  }
-  return null;
+  if (p.url && p.url === q.url) return "place";
+  if (p.placeKey && p.placeKey === q.placeKey) return "place";
+  if (p.osm && p.osm === q.osm) return "place";
+  // Both point at known places, and they're different ones.
+  if (p.placeKey && q.placeKey) return null;
+  if (p.osm && q.osm) return null;
+  const distance = p.coords && q.coords ? distanceMeters(p.coords, q.coords) : null;
+  if (distance !== null && distance > DIFFERENT_PLACE_METERS) return null;
+  if (!wordSetsMatch(p.words, q.words)) return null;
+  return distance !== null && distance <= SAME_SPOT_METERS ? "nearby" : "name";
 }
 
-// "Not the same restaurant" decisions are stored on entries as
-// `not_same_as: [entry ids]` (CLAUDE.md Section 8). Two restaurants count
-// as dismissed if any entry of one names any entry of the other.
-const pairKey = (a, b) => (a < b ? `${a}|${b}` : `${b}|${a}`);
+const REASON_ORDER = { place: 0, nearby: 1, name: 2 };
 
-function notSamePairs(restaurants) {
-  const pairs = new Set();
-  for (const r of restaurants) {
-    for (const v of r.visits) {
-      for (const other of v.not_same_as || []) pairs.add(pairKey(v.id, other));
-    }
-  }
-  return pairs;
+// "Not the same restaurant" decisions: restaurant ids in `not_same_as`
+// (CLAUDE.md Section 15.1), checked in both directions.
+function markedDifferent(a, b) {
+  return (a.not_same_as || []).includes(b.id) || (b.not_same_as || []).includes(a.id);
 }
 
-function markedDifferent(a, b, pairs) {
-  if (pairs.size === 0) return false;
-  return a.visits.some((v) => b.visits.some((w) => pairs.has(pairKey(v.id, w.id))));
-}
-
-// Returns (entry) => [{ restaurant, reason }], "place" matches first.
-// Profiles are computed once, so checking many entries (an import) is cheap.
+// Returns (candidate) => [{ restaurant, reason }], strongest matches first.
+// Profiles are computed once, so checking many candidates (an import) is
+// cheap. The candidate is restaurant-shaped and not yet saved.
 export function createMatcher(restaurants) {
-  const profiles = restaurants.map((r) => ({ restaurant: r, profile: profileOf(r.visits) }));
-  return (entry) => {
-    const p = profileOf([entry]);
+  const profiles = restaurants.map((r) => ({ restaurant: r, profile: profileOf(r) }));
+  return (candidate) => {
+    const p = profileOf(candidate);
     const matches = [];
     for (const { restaurant, profile } of profiles) {
       const reason = compareProfiles(p, profile);
       if (reason) matches.push({ restaurant, reason });
     }
-    return matches.sort((a, b) => (a.reason === b.reason ? 0 : a.reason === "place" ? -1 : 1));
+    return matches.sort((a, b) => REASON_ORDER[a.reason] - REASON_ORDER[b.reason]);
   };
 }
 
 // Groups restaurants that look like the same place (transitively: if A~B
-// and B~C, all three end up in one group). Only groups of 2+ are returned,
-// each sorted by name, groups ordered by their first name.
+// and B~C, all three end up in one group), skipping pairs marked as
+// different. Only groups of 2+ are returned, each sorted by name, groups
+// ordered by their first name.
 export function findDuplicateGroups(restaurants) {
-  const profiles = restaurants.map((r) => profileOf(r.visits));
-  const dismissed = notSamePairs(restaurants);
+  const profiles = restaurants.map(profileOf);
   const parent = restaurants.map((_, i) => i);
   const find = (i) => (parent[i] === i ? i : (parent[i] = find(parent[i])));
 
   for (let i = 0; i < restaurants.length; i++) {
     for (let j = i + 1; j < restaurants.length; j++) {
-      if (compareProfiles(profiles[i], profiles[j]) && !markedDifferent(restaurants[i], restaurants[j], dismissed)) {
+      if (compareProfiles(profiles[i], profiles[j]) && !markedDifferent(restaurants[i], restaurants[j])) {
         parent[find(i)] = find(j);
       }
     }

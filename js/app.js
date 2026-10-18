@@ -1,18 +1,31 @@
-import { createEmptyState, groupByRestaurant, addRating, updateRating, removeRating, removeRestaurantGroups, mergeRestaurantGroups, markRestaurantsDifferent, generateId } from "./state.js";
+import {
+  emptyDoc,
+  buildRestaurantViews,
+  updateRestaurant,
+  deleteRestaurants,
+  addVisit,
+  updateVisit,
+  deleteVisit,
+  mergeRestaurants,
+  markRestaurantsDifferent,
+  generateId,
+  hasLocation,
+  DATA_FILE,
+} from "./data.js";
 import { sortRestaurants } from "./sort.js";
-import { renderRestaurantList, renderListHeader, renderStarPicker, renderPricePicker, renderTagPicker, renderTagFilter, restaurantTags, setStatus } from "./render.js";
+import { renderRestaurantList, renderListHeader, renderStarPicker, renderPricePicker, renderTagPicker, renderTagFilter, setStatus } from "./render.js";
 import { computeTagColors } from "./tagColors.js";
 import { getSettings, saveSettings, removeToken, hasCompleteSettings, parseRepoInput } from "./settings.js";
-import { fetchRatings, saveRatings, fetchCurrentUser, GitHubApiError } from "./api.js";
+import { fetchDataDoc, saveDataDoc, fetchCurrentUser, GitHubApiError } from "./api.js";
 import { renderRestaurantDetail } from "./history.js";
-import { openMapsUrl, extractNameFromMapsUrl } from "./maps.js";
-import { ratingsToCsv, downloadCsv } from "./csv.js";
-import { decodeImportFile, parseGoogleMapsExport, buildRatingsFromImport, applyImport } from "./googleImport.js";
+import { openMapsUrl, extractNameFromMapsUrl, extractCoordsFromMapsUrl } from "./maps.js";
+import { restaurantsToCsv, downloadCsv } from "./csv.js";
+import { decodeImportFile, parseGoogleMapsExport, buildImport, applyImport } from "./googleImport.js";
 import { extractPlaceKey, normalizeName, createMatcher, findDuplicateGroups } from "./duplicates.js";
 
 // Bump on every change that gets pushed, so a device still running a
 // cached older app.js is easy to spot (shown at the bottom of Settings).
-const APP_VERSION = "2026-10-18a";
+const APP_VERSION = "2026-10-18b";
 
 // Phones have no visible error console; surface anything uncaught in the
 // status line instead of failing silently.
@@ -23,41 +36,45 @@ function showUnexpectedError(err) {
 window.addEventListener("error", (e) => showUnexpectedError(e.error || e.message));
 window.addEventListener("unhandledrejection", (e) => showUnexpectedError(e.reason));
 
-const state = createEmptyState();
+// The data document (foodlog.json, CLAUDE.md Section 15.1) and its blob sha.
+let doc = emptyDoc();
+let sha = null;
+let views = []; // restaurant views (data.js), rebuilt in refreshList()
+
 let sortField = "rating";
 let sortDir = "desc";
 let currentUser = null;
-let detailGroupKey = null; // groupKey of the restaurant currently shown in detail view
-let editingVisitId = null;
-let listView = "visited"; // "visited" | "wishlist"
+let listView = "visited"; // "visited" (Rated) | "wishlist"
 let tagFilter = ""; // "" = all tags
 let tagColors = new Map(); // tag -> colour, recomputed whenever the list is rendered
-let formTags = []; // New rating form's current tag selection
+let formTags = []; // New form's current tag selection
 let showDuplicates = false;
 let nameSearch = ""; // normalized, "" = no search
-const selectedGroupKeys = new Set();
+const selectedIds = new Set();
 
-// Applies `mutate` (ratings[] -> ratings[]) and writes the result to the data
-// repo, re-fetching the latest ratings/sha first and retrying once on a 409
+// Detail view: which restaurant, and which form (if any) is open.
+let detailId = null;
+const closedDetailUi = () => ({ editingRestaurant: false, addingVisit: false, editingVisitId: null });
+let detailUi = closedDetailUi();
+
+// Applies `mutate` (doc -> doc) and writes the result to the data repo,
+// re-fetching the latest document/sha first and retrying once on a 409
 // write conflict (see CLAUDE.md Section 9).
 async function writeWithConflictRetry(mutate, { message, maxAttempts = 2 } = {}) {
   const { owner, repo, token } = getSettings();
-  let attempt = 0;
   let lastError;
-
-  while (attempt < maxAttempts) {
-    attempt += 1;
-    const { ratings: latestRatings, sha } = await fetchRatings({ owner, repo, token });
-    const nextRatings = mutate(latestRatings);
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const { doc: latest, sha: latestSha } = await fetchDataDoc({ owner, repo, token });
+    const next = mutate(latest);
     try {
-      const result = await saveRatings({ owner, repo, token, ratings: nextRatings, sha, message });
-      state.ratings = nextRatings;
-      state.sha = result.sha;
-      return nextRatings;
+      const result = await saveDataDoc({ owner, repo, token, doc: next, sha: latestSha, message });
+      doc = next;
+      sha = result.sha;
+      return next;
     } catch (err) {
       if (err instanceof GitHubApiError && err.status === 409) {
         lastError = err;
-        continue; // reload latest state and reapply the mutation
+        continue; // reload the latest data and reapply the change
       }
       throw err;
     }
@@ -65,26 +82,23 @@ async function writeWithConflictRetry(mutate, { message, maxAttempts = 2 } = {})
   throw lastError;
 }
 
-async function loadRatingsFromRepo() {
+async function loadData() {
   const { owner, repo, token } = getSettings();
-  setStatus(els.statusMessage, "Loading ratings…");
+  setStatus(els.statusMessage, "Loading…");
   try {
-    const { ratings, sha, notFound } = await fetchRatings({ owner, repo, token });
-    state.ratings = ratings;
-    state.sha = sha;
+    const result = await fetchDataDoc({ owner, repo, token });
+    doc = result.doc;
+    sha = result.sha;
     refreshList();
-    if (detailGroupKey) refreshDetail();
-    if (notFound) {
-      setStatus(
-        els.statusMessage,
-        `No ratings.json found at ${owner}/${repo}. Double-check the exact owner/repo spelling in Settings and that your token has access — this is not the same as a confirmed-empty list.`,
-        true
-      );
-    } else {
-      setStatus(els.statusMessage, `Loaded ${ratings.length} visit(s).`);
-    }
+    if (detailId) refreshDetail();
+    setStatus(
+      els.statusMessage,
+      result.isNew
+        ? `No data yet — your first save creates ${DATA_FILE} in your data repo.`
+        : `Loaded ${doc.restaurants.length} restaurant(s), ${doc.visits.length} visit(s).`
+    );
   } catch (err) {
-    setStatus(els.statusMessage, describeError(err, "Failed to load ratings"), true);
+    setStatus(els.statusMessage, describeError(err, "Failed to load"), true);
   }
 }
 
@@ -105,9 +119,6 @@ function describeError(err, prefix) {
   if (err instanceof GitHubApiError && err.status === 401) {
     return `${prefix}: GitHub rejected the token — it may be mistyped, expired or revoked. Paste it again in Settings.`;
   }
-  if (err instanceof GitHubApiError) {
-    return `${prefix}: ${err.message}`;
-  }
   return `${prefix}: ${err.message || "unknown error"}`;
 }
 
@@ -125,7 +136,9 @@ const els = {
   removeTokenButton: document.getElementById("btn-remove-token"),
   ratingForm: document.getElementById("rating-form"),
   mapsUrlInput: document.getElementById("field-maps-url"),
+  locationHint: document.getElementById("field-location-hint"),
   nameInput: document.getElementById("field-name"),
+  noteInput: document.getElementById("field-note"),
   ratingPicker: document.getElementById("field-rating"),
   pricePicker: document.getElementById("field-price"),
   commentInput: document.getElementById("field-comment"),
@@ -157,35 +170,27 @@ const els = {
   importReview: document.getElementById("import-review"),
 };
 
-function hasVisitedVisit(restaurant) {
-  return restaurant.visits.some((v) => (v.status || "visited") !== "wishlist");
-}
-
 function matchesNameSearch(restaurant) {
-  return !nameSearch || restaurant.visits.some((v) => normalizeName(v.name).includes(nameSearch));
+  return !nameSearch || normalizeName(restaurant.name).includes(nameSearch);
 }
 
 function refreshList() {
-  // Group first, then classify whole restaurants: one with any rated visit
-  // belongs in Rated; only all-wishlist restaurants stay in Wishlist. (A
-  // wishlist entry merged/attached to a rated one must not linger there.)
-  const allRestaurants = groupByRestaurant(state.ratings);
-  tagColors = computeTagColors(state.ratings);
+  views = buildRestaurantViews(doc);
+  tagColors = computeTagColors(doc.restaurants);
   let sorted;
   let mode;
   const groupStartKeys = new Set();
 
   if (showDuplicates) {
-    const groups = findDuplicateGroups(allRestaurants).filter((g) => g.some(matchesNameSearch));
-    groups.forEach((g) => groupStartKeys.add(g[0].groupKey));
+    const groups = findDuplicateGroups(views).filter((g) => g.some(matchesNameSearch));
+    groups.forEach((g) => groupStartKeys.add(g[0].id));
     sorted = groups.flat();
     mode = "duplicates";
   } else {
-    const inView = allRestaurants.filter((r) => (listView === "wishlist" ? !hasVisitedVisit(r) : hasVisitedVisit(r)));
+    // Rated = has at least one visit; Wishlist = no visits (Section 15.1).
+    const inView = views.filter((r) => (listView === "wishlist" ? r.isWishlist : !r.isWishlist));
     refreshTagFilter(inView);
-    const filtered = inView.filter(
-      (r) => matchesNameSearch(r) && (!tagFilter || restaurantTags(r).includes(tagFilter))
-    );
+    const filtered = inView.filter((r) => matchesNameSearch(r) && (!tagFilter || r.tags.includes(tagFilter)));
     sorted =
       listView === "wishlist"
         ? sortRestaurants(filtered, "name", "asc")
@@ -196,11 +201,11 @@ function refreshList() {
   els.viewToggle.hidden = showDuplicates;
   if (showDuplicates) els.tagFilterContainer.hidden = true;
 
-  const allSelected = sorted.length > 0 && sorted.every((r) => selectedGroupKeys.has(r.groupKey));
+  const allSelected = sorted.length > 0 && sorted.every((r) => selectedIds.has(r.id));
   renderListHeader(els.restaurantTableHeaderRow, mode, (checked) => {
     for (const r of sorted) {
-      if (checked) selectedGroupKeys.add(r.groupKey);
-      else selectedGroupKeys.delete(r.groupKey);
+      if (checked) selectedIds.add(r.id);
+      else selectedIds.delete(r.id);
     }
     refreshList();
   }, allSelected);
@@ -208,14 +213,14 @@ function refreshList() {
   renderRestaurantList(
     els.restaurantListBody,
     sorted,
-    (key) => showDetail(key),
+    (id) => showDetail(id),
     mode,
-    (groupKey, checked) => {
-      if (checked) selectedGroupKeys.add(groupKey);
-      else selectedGroupKeys.delete(groupKey);
+    (id, checked) => {
+      if (checked) selectedIds.add(id);
+      else selectedIds.delete(id);
       updateBulkActionButtons();
     },
-    selectedGroupKeys,
+    selectedIds,
     {
       groupStartKeys,
       tagColors,
@@ -228,16 +233,11 @@ function refreshList() {
 }
 
 function allKnownTags() {
-  const tags = new Set();
-  for (const r of state.ratings) {
-    for (const t of r.tags || []) tags.add(t);
-  }
-  return [...tags].sort((a, b) => a.localeCompare(b));
+  return [...new Set(doc.restaurants.flatMap((r) => r.tags || []))].sort((a, b) => a.localeCompare(b));
 }
 
-// Re-renders the New rating form's tag picker, preserving the current
-// in-progress selection (formTags) while refreshing which tags are
-// available to pick from.
+// Re-renders the New form's tag picker, preserving the current in-progress
+// selection (formTags) while refreshing which tags are available.
 function refreshTagPicker() {
   renderTagPicker(
     els.tagsPicker,
@@ -254,18 +254,18 @@ function refreshTagPicker() {
 // Tag chips for the current view (Rated or Wishlist): only tags that occur
 // there. A selected tag that no longer occurs resets the filter to "all".
 function refreshTagFilter(restaurantsInView) {
-  const tags = [...new Set(restaurantsInView.flatMap(restaurantTags))].sort((a, b) => a.localeCompare(b));
+  const tags = [...new Set(restaurantsInView.flatMap((r) => r.tags))].sort((a, b) => a.localeCompare(b));
   if (tagFilter && !tags.includes(tagFilter)) tagFilter = "";
   els.tagFilterContainer.hidden = tags.length === 0;
   renderTagFilter(els.tagFilterContainer, tags, tagColors, tagFilter, (tag) => {
     tagFilter = tag;
-    selectedGroupKeys.clear();
+    selectedIds.clear();
     refreshList();
   });
 }
 
 function updateBulkActionButtons() {
-  const count = selectedGroupKeys.size;
+  const count = selectedIds.size;
   els.deleteSelectedButton.hidden = count === 0;
   els.deleteSelectedButton.textContent = `Delete selected (${count})`;
   els.mergeSelectedButton.hidden = count < 2;
@@ -274,16 +274,30 @@ function updateBulkActionButtons() {
   els.notSameButton.textContent = `Not the same (${count})`;
 }
 
-function findRestaurant(groupKey) {
-  return groupByRestaurant(state.ratings).find((r) => r.groupKey === groupKey) || null;
+// Runs a detail-view change, then closes any open form and re-renders.
+async function saveDetailChange(mutate, message, doneText) {
+  try {
+    await writeWithConflictRetry(mutate, { message });
+    detailUi = closedDetailUi();
+    refreshList();
+    refreshDetail();
+    setStatus(els.statusMessage, doneText);
+  } catch (err) {
+    setStatus(els.statusMessage, describeError(err, "Failed to save"), true);
+  }
 }
 
 function refreshDetail() {
-  const restaurant = findRestaurant(detailGroupKey);
+  const restaurant = buildRestaurantViews(doc).find((r) => r.id === detailId);
   if (!restaurant) {
     goToList();
     return;
   }
+  const id = restaurant.id;
+  const open = (changes) => {
+    detailUi = { ...closedDetailUi(), ...changes };
+    refreshDetail();
+  };
   renderRestaurantDetail(
     els.detailContent,
     restaurant,
@@ -295,44 +309,42 @@ function refreshDetail() {
           setStatus(els.statusMessage, err.message, true);
         }
       },
-      onEdit: (id) => {
-        editingVisitId = id;
-        refreshDetail();
+      onCancel: () => open({}),
+      onEditRestaurant: () => open({ editingRestaurant: true }),
+      onSaveRestaurant: (changes) => {
+        // A newly pasted long Google link can supply a missing location.
+        const coords = hasLocation(restaurant) ? null : extractCoordsFromMapsUrl(changes.google_maps_url);
+        saveDetailChange((d) => updateRestaurant(d, id, { ...changes, ...(coords || {}) }), "Edit restaurant", "Restaurant updated.");
       },
-      onCancelEdit: () => {
-        editingVisitId = null;
-        refreshDetail();
-      },
-      onSaveEdit: async (id, changes) => {
+      onDeleteRestaurant: async () => {
         try {
-          await writeWithConflictRetry((latestRatings) => updateRating(latestRatings, id, changes), {
-            message: "Edit rating",
-          });
-          editingVisitId = null;
-          refreshDetail();
+          await writeWithConflictRetry((d) => deleteRestaurants(d, [id]), { message: "Delete restaurant" });
           refreshList();
-          setStatus(els.statusMessage, "Visit updated.");
+          goToList();
+          setStatus(els.statusMessage, "Restaurant deleted.");
         } catch (err) {
-          setStatus(els.statusMessage, describeError(err, "Failed to save edit"), true);
+          setStatus(els.statusMessage, describeError(err, "Failed to delete"), true);
         }
       },
-      onDelete: async (id) => {
-        try {
-          await writeWithConflictRetry((latestRatings) => removeRating(latestRatings, id), {
-            message: "Delete rating",
-          });
-          refreshDetail();
-          refreshList();
-          setStatus(els.statusMessage, "Visit deleted.");
-        } catch (err) {
-          setStatus(els.statusMessage, describeError(err, "Failed to delete visit"), true);
-        }
-      },
+      onAddVisit: () => open({ addingVisit: true }),
+      onSaveNewVisit: (fields) =>
+        saveDetailChange(
+          (d) => addVisit(d, { id: generateId(), restaurant_id: id, ...fields, ...stamp() }),
+          "Add visit",
+          "Visit added."
+        ),
+      onEditVisit: (visitId) => open({ editingVisitId: visitId }),
+      onSaveVisit: (visitId, fields) => saveDetailChange((d) => updateVisit(d, visitId, fields), "Edit visit", "Visit updated."),
+      onDeleteVisit: (visitId) => saveDetailChange((d) => deleteVisit(d, visitId), "Delete visit", "Visit deleted."),
     },
-    editingVisitId,
+    detailUi,
     allKnownTags(),
     tagColors
   );
+}
+
+function stamp() {
+  return { created_by: currentUser || "unknown", created_at: new Date().toISOString() };
 }
 
 // Phone back button: the list is the "home" history entry. Opening a
@@ -355,9 +367,9 @@ function goToList() {
 }
 
 // The detail view lives inside the List tab, replacing the list itself.
-function showDetail(groupKey) {
-  detailGroupKey = groupKey;
-  editingVisitId = null;
+function showDetail(id) {
+  detailId = id;
+  detailUi = closedDetailUi();
   els.listPanel.hidden = true;
   els.detailPanel.hidden = false;
   refreshDetail();
@@ -366,8 +378,8 @@ function showDetail(groupKey) {
 }
 
 function showList() {
-  detailGroupKey = null;
-  editingVisitId = null;
+  detailId = null;
+  detailUi = closedDetailUi();
   els.detailPanel.hidden = true;
   els.listPanel.hidden = false;
 }
@@ -412,7 +424,7 @@ function initTabs() {
 function initViewToggle() {
   function setView(view) {
     listView = view;
-    selectedGroupKeys.clear();
+    selectedIds.clear();
     els.viewVisitedButton.classList.toggle("active", view === "visited");
     els.viewVisitedButton.setAttribute("aria-pressed", String(view === "visited"));
     els.viewWishlistButton.classList.toggle("active", view === "wishlist");
@@ -428,12 +440,12 @@ function initViewToggle() {
 function initListFilters() {
   els.showDuplicatesCheckbox.addEventListener("change", () => {
     showDuplicates = els.showDuplicatesCheckbox.checked;
-    selectedGroupKeys.clear();
+    selectedIds.clear();
     refreshList();
   });
   els.nameSearchInput.addEventListener("input", () => {
     nameSearch = normalizeName(els.nameSearchInput.value);
-    selectedGroupKeys.clear();
+    selectedIds.clear();
     refreshList();
   });
   // The list already filters while typing; Enter/Search just closes the
@@ -446,79 +458,45 @@ function initListFilters() {
   });
 }
 
-function initBulkNotSame() {
-  els.notSameButton.addEventListener("click", async () => {
-    const count = selectedGroupKeys.size;
-    if (count < 2) return;
-    const confirmed = confirm(
-      `Mark the ${count} selected restaurants as different from each other? They won't be suggested as duplicates of each other again.`
-    );
-    if (!confirmed) return;
-
-    const keys = new Set(selectedGroupKeys);
+// Shared by the three bulk actions: confirm, write once, clear selection.
+function initBulkAction(button, { minCount, confirmText, mutate, message, doneText }) {
+  button.addEventListener("click", async () => {
+    const ids = [...selectedIds];
+    if (ids.length < minCount) return;
+    if (!confirm(confirmText(ids.length))) return;
     setStatus(els.statusMessage, "Saving…");
     try {
-      await writeWithConflictRetry((latestRatings) => markRestaurantsDifferent(latestRatings, keys), {
-        message: `Mark ${count} restaurants as not duplicates`,
-      });
-      selectedGroupKeys.clear();
+      await writeWithConflictRetry((d) => mutate(d, ids), { message: message(ids.length) });
+      selectedIds.clear();
       refreshList();
-      setStatus(els.statusMessage, `Marked ${count} restaurants as different.`);
+      setStatus(els.statusMessage, doneText(ids.length));
     } catch (err) {
       setStatus(els.statusMessage, describeError(err, "Failed to save"), true);
     }
   });
 }
 
-function initBulkDelete() {
-  els.deleteSelectedButton.addEventListener("click", async () => {
-    const count = selectedGroupKeys.size;
-    if (count === 0) return;
-
-    const confirmed = confirm(
-      `Delete ${count} restaurant(s) and all their visits? This cannot be undone.`
-    );
-    if (!confirmed) return;
-
-    setStatus(els.statusMessage, `Deleting ${count} entries…`);
-    try {
-      await writeWithConflictRetry(
-        (latestRatings) => removeRestaurantGroups(latestRatings, selectedGroupKeys),
-        { message: `Delete ${count} restaurant(s)` }
-      );
-      selectedGroupKeys.clear();
-      refreshList();
-      setStatus(els.statusMessage, `Deleted ${count} entries.`);
-    } catch (err) {
-      setStatus(els.statusMessage, describeError(err, "Failed to delete selected"), true);
-    }
+function initBulkActions() {
+  initBulkAction(els.deleteSelectedButton, {
+    minCount: 1,
+    confirmText: (n) => `Delete ${n} restaurant(s) and all their visits? This cannot be undone.`,
+    mutate: deleteRestaurants,
+    message: (n) => `Delete ${n} restaurant(s)`,
+    doneText: (n) => `Deleted ${n} restaurant(s).`,
   });
-}
-
-function initBulkMerge() {
-  els.mergeSelectedButton.addEventListener("click", async () => {
-    const count = selectedGroupKeys.size;
-    if (count < 2) return;
-
-    const confirmed = confirm(
-      `Merge ${count} selected restaurants into one? Their visit histories will be combined. This cannot be undone.`
-    );
-    if (!confirmed) return;
-
-    const keysToMerge = new Set(selectedGroupKeys);
-    const newRestaurantId = generateId();
-    setStatus(els.statusMessage, `Merging ${count} restaurants…`);
-    try {
-      await writeWithConflictRetry(
-        (latestRatings) => mergeRestaurantGroups(latestRatings, keysToMerge, newRestaurantId),
-        { message: `Merge ${count} restaurants` }
-      );
-      selectedGroupKeys.clear();
-      refreshList();
-      setStatus(els.statusMessage, `Merged ${count} restaurants into one.`);
-    } catch (err) {
-      setStatus(els.statusMessage, describeError(err, "Failed to merge selected"), true);
-    }
+  initBulkAction(els.mergeSelectedButton, {
+    minCount: 2,
+    confirmText: (n) => `Merge ${n} selected restaurants into one? Their visits, tags and notes are combined. This cannot be undone.`,
+    mutate: mergeRestaurants,
+    message: (n) => `Merge ${n} restaurants`,
+    doneText: (n) => `Merged ${n} restaurants into one.`,
+  });
+  initBulkAction(els.notSameButton, {
+    minCount: 2,
+    confirmText: (n) => `Mark the ${n} selected restaurants as different from each other? They won't be suggested as duplicates of each other again.`,
+    mutate: markRestaurantsDifferent,
+    message: (n) => `Mark ${n} restaurants as not duplicates`,
+    doneText: (n) => `Marked ${n} restaurants as different.`,
   });
 }
 
@@ -528,12 +506,20 @@ function initWishlistToggle() {
   });
 }
 
-async function runImport(plan, bulkTag) {
+// Which tab a matched restaurant lives in, so a match isn't confusing.
+function listNameOf(restaurant) {
+  return restaurant.isWishlist ? "Wishlist" : "Rated";
+}
+
+const REASON_TEXT = { place: "same place", nearby: "similar name, same spot", name: "similar name" };
+const MAX_SHOWN_MATCHES = 3;
+
+async function runImport(plan) {
   const newCount = plan.filter((p) => p.decision !== "same").length;
   const sameCount = plan.length - newCount;
   setStatus(els.importStatus, "Importing…");
   try {
-    await writeWithConflictRetry((latestRatings) => applyImport(latestRatings, plan, { bulkTag, generateId }), {
+    await writeWithConflictRetry((d) => applyImport(d, plan), {
       message: `Import ${plan.length} place(s) from Google Maps`,
     });
     hideImportReview();
@@ -557,7 +543,7 @@ function hideImportReview() {
 // One question per imported place with a similar-name match: "same as
 // <existing>" (one option per candidate) or "different". Nothing is saved
 // until every question is answered and Import is clicked.
-function showImportReview(items, summary, bulkTag) {
+function showImportReview(items, summary) {
   const box = els.importReview;
   box.textContent = "";
   const reviewed = items.filter((i) => i.matches.length > 0);
@@ -581,7 +567,7 @@ function showImportReview(items, summary, bulkTag) {
     const fieldset = document.createElement("fieldset");
     fieldset.className = "review-item";
     const legend = document.createElement("legend");
-    legend.textContent = `"${item.rating.name}" from the file`;
+    legend.textContent = `"${item.restaurant.name}" from the file`;
     fieldset.appendChild(legend);
 
     const addOption = (labelText, value) => {
@@ -605,24 +591,16 @@ function showImportReview(items, summary, bulkTag) {
   });
 
   importButton.addEventListener("click", () => {
-    const plan = items.map((item) => {
-      if (item.matches.length === 0) return { rating: item.rating, decision: "add" };
-      const answer = answers.get(item);
-      const shown = item.matches.slice(0, MAX_SHOWN_MATCHES);
+    const plan = items.map(({ restaurant, visit, matches }) => {
+      if (matches.length === 0) return { restaurant, visit, decision: "add" };
+      const answer = answers.get(items.find((i) => i.restaurant === restaurant));
+      const shown = matches.slice(0, MAX_SHOWN_MATCHES);
       if (answer === "different") {
-        return {
-          rating: item.rating,
-          decision: "add",
-          matchIds: shown.flatMap((m) => m.restaurant.visits.map((v) => v.id)),
-        };
+        return { restaurant, visit, decision: "add", differentFrom: shown.map((m) => m.restaurant.id) };
       }
-      return {
-        rating: item.rating,
-        decision: "same",
-        matchIds: shown[answer].restaurant.visits.map((v) => v.id),
-      };
+      return { restaurant, visit, decision: "same", sameAs: shown[answer].restaurant.id };
     });
-    runImport(plan, bulkTag);
+    runImport(plan);
   });
 
   const cancelButton = document.createElement("button");
@@ -670,52 +648,47 @@ function initImport() {
         return;
       }
 
-      const knownUrls = new Set(state.ratings.map((r) => (r.google_maps_url || "").trim()).filter(Boolean));
-      const knownPlaceKeys = new Set(state.ratings.map((r) => extractPlaceKey(r.google_maps_url)).filter(Boolean));
+      const knownUrls = new Set(doc.restaurants.map((r) => (r.google_maps_url || "").trim()).filter(Boolean));
+      const knownPlaceKeys = new Set(doc.restaurants.map((r) => extractPlaceKey(r.google_maps_url)).filter(Boolean));
       const isKnownPlace = (url) => {
         const key = extractPlaceKey(url);
         return knownUrls.has(url.trim()) || (key !== null && knownPlaceKeys.has(key));
       };
-      const { toAdd, skippedDuplicates } = buildRatingsFromImport(entries, {
+      const bulkTag = els.importTagInput.value.trim();
+      const { items: built, skippedDuplicates } = buildImport(entries, {
         createdBy: currentUser || "unknown",
         isKnownPlace,
         generateId,
+        bulkTag,
       });
 
-      if (toAdd.length === 0) {
+      if (built.length === 0) {
         setStatus(els.importStatus, `Nothing new to import (${skippedDuplicates} already in your list).`, true);
         return;
       }
 
-      const bulkTag = els.importTagInput.value.trim();
-      if (bulkTag) {
-        for (const r of toAdd) {
-          if (!r.tags.includes(bulkTag)) r.tags = [...r.tags, bulkTag];
-        }
-      }
-
       // Same-place matches were already skipped above; anything still
-      // matching is a similar-name match, which gets reviewed before saving.
-      const matchExisting = createMatcher(groupByRestaurant(state.ratings));
-      const items = toAdd.map((rating) => ({ rating, matches: matchExisting(rating) }));
+      // matching is reviewed before saving.
+      const matchExisting = createMatcher(buildRestaurantViews(doc));
+      const items = built.map((item) => ({ ...item, matches: matchExisting(item.restaurant) }));
 
-      const visitedCount = toAdd.filter((r) => r.status === "visited").length;
+      const ratedCount = built.filter((i) => i.visit).length;
       const summary =
-        `Found ${entries.length} place(s) in the file: ${visitedCount} rated, ${toAdd.length - visitedCount} wishlist.` +
+        `Found ${entries.length} place(s) in the file: ${ratedCount} rated, ${built.length - ratedCount} wishlist.` +
         (skippedDuplicates > 0 ? ` ${skippedDuplicates} already in your list (same Google Maps place) will be skipped.` : "") +
         (bulkTag ? ` All will be tagged "${bulkTag}".` : "");
 
       if (items.some((i) => i.matches.length > 0)) {
-        showImportReview(items, summary, bulkTag);
+        showImportReview(items, summary);
         setStatus(els.importStatus, "");
         return;
       }
 
-      if (!confirm(`${summary}\n\nImport ${toAdd.length} new entr${toAdd.length === 1 ? "y" : "ies"}?`)) {
+      if (!confirm(`${summary}\n\nImport ${built.length} new place(s)?`)) {
         setStatus(els.importStatus, "Import cancelled.");
         return;
       }
-      await runImport(items.map(({ rating }) => ({ rating, decision: "add" })), bulkTag);
+      await runImport(items.map(({ restaurant, visit }) => ({ restaurant, visit, decision: "add" })));
     } catch (err) {
       setStatus(els.importStatus, describeError(err, "Import failed"), true);
     } finally {
@@ -724,13 +697,16 @@ function initImport() {
   });
 }
 
-function initMapsNamePrefill() {
+function initMapsLinkHelpers() {
   els.mapsUrlInput.addEventListener("input", () => {
-    if (els.nameInput.value.trim() !== "") return; // never overwrite a typed name
-    const extracted = extractNameFromMapsUrl(els.mapsUrlInput.value.trim());
-    if (extracted) {
-      els.nameInput.value = extracted;
+    const url = els.mapsUrlInput.value.trim();
+    if (els.nameInput.value.trim() === "") {
+      const extracted = extractNameFromMapsUrl(url);
+      if (extracted) els.nameInput.value = extracted;
     }
+    const coords = extractCoordsFromMapsUrl(url);
+    els.locationHint.hidden = !coords;
+    els.locationHint.textContent = coords ? "Location found in the link — it will be saved with the restaurant." : "";
   });
 }
 
@@ -772,7 +748,7 @@ function initSettingsPanel() {
     updateSettingsStatus();
     await resolveCurrentUser();
     if (hasCompleteSettings()) {
-      await loadRatingsFromRepo();
+      await loadData();
     }
   });
 
@@ -793,21 +769,30 @@ function updateSettingsStatus() {
 
 // Read fresh from the form every time it's needed (incl. from the duplicate
 // warning's buttons), so edits made while the warning is shown aren't lost.
-function buildRatingFromForm() {
-  const isWishlist = els.wishlistCheckbox.checked;
-  return {
+// Returns { restaurant, visit } — visit is null for "haven't been yet".
+function buildFromForm() {
+  const url = els.mapsUrlInput.value.trim();
+  const restaurant = {
     id: generateId(),
     name: els.nameInput.value.trim(),
-    google_maps_url: els.mapsUrlInput.value.trim(),
-    status: isWishlist ? "wishlist" : "visited",
-    rating: isWishlist ? null : Number(els.ratingPicker.dataset.value || 0),
-    price_level: isWishlist ? null : Number(els.pricePicker.dataset.value || 0),
-    comment: isWishlist ? "" : els.commentInput.value.trim(),
     tags: formTags,
-    visited_at: isWishlist ? null : els.visitedAtInput.value || new Date().toISOString().slice(0, 10),
-    created_by: currentUser || "unknown",
-    created_at: new Date().toISOString(),
+    note: els.noteInput.value.trim(),
+    ...stamp(),
   };
+  if (url) restaurant.google_maps_url = url;
+  Object.assign(restaurant, extractCoordsFromMapsUrl(url) || {});
+  if (els.wishlistCheckbox.checked) return { restaurant, visit: null };
+  const price = Number(els.pricePicker.dataset.value || 0);
+  const visit = {
+    id: generateId(),
+    restaurant_id: restaurant.id,
+    rating: Number(els.ratingPicker.dataset.value || 0),
+    price_level: price > 0 ? price : null,
+    comment: els.commentInput.value.trim(),
+    visited_at: els.visitedAtInput.value || new Date().toISOString().slice(0, 10),
+    ...stamp(),
+  };
+  return { restaurant, visit };
 }
 
 function hideDuplicateWarning() {
@@ -815,22 +800,14 @@ function hideDuplicateWarning() {
   els.duplicateWarning.textContent = "";
 }
 
-const MAX_SHOWN_MATCHES = 3;
-
-// Which tab a matched restaurant lives in, so a match isn't confusing.
-function listNameOf(restaurant) {
-  return hasVisitedVisit(restaurant) ? "Rated" : "Wishlist";
-}
-
-function showDuplicateWarning(matches) {
+function showDuplicateWarning(matches, hasVisit) {
   const box = els.duplicateWarning;
   box.textContent = "";
-  const reasonText = (reason) => (reason === "place" ? "same Google Maps place" : "similar name");
 
   const intro = document.createElement("p");
   intro.textContent =
     matches.length === 1
-      ? `This looks like "${matches[0].restaurant.name}", already in your ${listNameOf(matches[0].restaurant)} list (${reasonText(matches[0].reason)}).`
+      ? `This looks like "${matches[0].restaurant.name}", already in your ${listNameOf(matches[0].restaurant)} list (${REASON_TEXT[matches[0].reason]}).`
       : "This looks like a restaurant already in your list:";
   box.appendChild(intro);
 
@@ -839,19 +816,21 @@ function showDuplicateWarning(matches) {
   for (const { restaurant, reason } of matches.slice(0, MAX_SHOWN_MATCHES)) {
     const button = document.createElement("button");
     button.type = "button";
-    button.textContent =
-      matches.length === 1
-        ? `Add as another visit to "${restaurant.name}"`
-        : `Add as visit to "${restaurant.name}" (in ${listNameOf(restaurant)}, ${reasonText(reason)})`;
-    button.addEventListener("click", () => saveNewRating(buildRatingFromForm(), restaurant.groupKey));
+    const where = matches.length === 1 ? "" : ` (in ${listNameOf(restaurant)}, ${REASON_TEXT[reason]})`;
+    // With a visit: add it there. Without one: just bring the tags/note/link
+    // over to the existing restaurant.
+    button.textContent = hasVisit
+      ? `Add as another visit to "${restaurant.name}"${where}`
+      : `It's "${restaurant.name}" — keep that one${where}`;
+    button.addEventListener("click", () => saveFromForm({ decision: "same", sameAs: restaurant.id }));
     actions.appendChild(button);
   }
   const separate = document.createElement("button");
   separate.type = "button";
   separate.textContent = "Save separately";
   // Remembered (not_same_as), so these pairs aren't flagged again later.
-  const matchedIds = matches.flatMap((m) => m.restaurant.visits.map((v) => v.id));
-  separate.addEventListener("click", () => saveNewRating({ ...buildRatingFromForm(), not_same_as: matchedIds }, null));
+  const matchedIds = matches.map((m) => m.restaurant.id);
+  separate.addEventListener("click", () => saveFromForm({ decision: "add", differentFrom: matchedIds }));
   const cancel = document.createElement("button");
   cancel.type = "button";
   cancel.textContent = "Cancel";
@@ -862,39 +841,29 @@ function showDuplicateWarning(matches) {
   box.hidden = false;
 }
 
-// `attachToGroupKey`: if set, the new visit joins that existing restaurant —
-// both share a restaurant_id (reusing the group's own if it has one), the
-// same mechanism as "Merge selected".
-async function saveNewRating(rating, attachToGroupKey) {
+// Saving from the New form uses the same "apply" logic as the import: add a
+// new restaurant (optionally remembered as different from some), or treat
+// it as an existing one ("same": fills missing info, adds the visit).
+async function saveFromForm({ decision, sameAs, differentFrom }) {
   hideDuplicateWarning();
-  const isWishlist = rating.status === "wishlist";
-  setStatus(els.statusMessage, isWishlist ? "Saving to wishlist…" : "Saving rating…");
+  const { restaurant, visit } = buildFromForm();
+  setStatus(els.statusMessage, "Saving…");
   try {
-    await writeWithConflictRetry(
-      (latestRatings) => {
-        const existing = attachToGroupKey
-          ? groupByRestaurant(latestRatings).find((r) => r.groupKey === attachToGroupKey)
-          : null;
-        if (!existing) return addRating(latestRatings, rating);
-        const restaurantId = existing.visits.find((v) => v.restaurant_id)?.restaurant_id || generateId();
-        const linked = mergeRestaurantGroups(latestRatings, new Set([attachToGroupKey]), restaurantId);
-        return addRating(linked, { ...rating, restaurant_id: restaurantId });
-      },
-      {
-        message: isWishlist ? `Add ${rating.name || "restaurant"} to wishlist` : `Add rating for ${rating.name || "restaurant"}`,
-      }
-    );
+    await writeWithConflictRetry((d) => applyImport(d, [{ restaurant, visit, decision, sameAs, differentFrom }]), {
+      message: visit ? `Add visit to ${restaurant.name || "restaurant"}` : `Add ${restaurant.name || "restaurant"} to wishlist`,
+    });
     els.ratingForm.reset();
     els.ratingPicker.dataset.value = "0";
     els.pricePicker.dataset.value = "0";
     els.visitedFieldsContainer.hidden = false;
+    els.locationHint.hidden = true;
     formTags = [];
     initPickers();
     refreshList();
     showTab("list");
-    setStatus(els.statusMessage, isWishlist ? "Added to wishlist." : "Rating saved.");
+    setStatus(els.statusMessage, visit ? "Saved." : "Added to wishlist.");
   } catch (err) {
-    setStatus(els.statusMessage, describeError(err, "Failed to save rating"), true);
+    setStatus(els.statusMessage, describeError(err, "Failed to save"), true);
   }
 }
 
@@ -904,17 +873,17 @@ function initRatingForm() {
     hideDuplicateWarning();
 
     if (!hasCompleteSettings()) {
-      setStatus(els.statusMessage, "Set your data repo and token in Settings before adding a rating.", true);
+      setStatus(els.statusMessage, "Set your data repo and token in Settings before saving.", true);
       return;
     }
 
-    const rating = buildRatingFromForm();
-    const matches = createMatcher(groupByRestaurant(state.ratings))(rating);
+    const { restaurant, visit } = buildFromForm();
+    const matches = createMatcher(buildRestaurantViews(doc))(restaurant);
     if (matches.length > 0) {
-      showDuplicateWarning(matches);
+      showDuplicateWarning(matches, Boolean(visit));
       return;
     }
-    await saveNewRating(rating, null);
+    await saveFromForm({ decision: "add" });
   });
 }
 
@@ -930,7 +899,6 @@ function initSortControls() {
     els.sortDirButton.dataset.dir = sortDir;
     refreshList();
   });
-
 }
 
 // Asks the app's own site (GitHub Pages, same origin — no other service)
@@ -970,15 +938,15 @@ function initToolbar() {
       setStatus(els.statusMessage, "Set your data repo and token in Settings first.", true);
       return;
     }
-    loadRatingsFromRepo();
+    loadData();
   });
   els.exportButton.addEventListener("click", () => {
-    if (state.ratings.length === 0) {
-      setStatus(els.statusMessage, "No ratings to export yet.", true);
+    if (doc.restaurants.length === 0) {
+      setStatus(els.statusMessage, "Nothing to export yet.", true);
       return;
     }
-    downloadCsv(ratingsToCsv(state.ratings));
-    setStatus(els.statusMessage, `Exported ${state.ratings.length} visit(s) as CSV.`);
+    downloadCsv(restaurantsToCsv(buildRestaurantViews(doc)));
+    setStatus(els.statusMessage, `Exported ${doc.restaurants.length} restaurant(s), ${doc.visits.length} visit(s) as CSV.`);
   });
 }
 
@@ -987,25 +955,23 @@ async function init() {
   initPickers();
   initSettingsPanel();
   initImport();
-  initMapsNamePrefill();
+  initMapsLinkHelpers();
   initWishlistToggle();
   initRatingForm();
   initSortControls();
   initToolbar();
   initDetailView();
   initViewToggle();
-  initBulkDelete();
-  initBulkMerge();
-  initBulkNotSame();
+  initBulkActions();
   initListFilters();
   refreshList();
   checkForAppUpdate();
   if (!hasCompleteSettings()) {
-    setStatus(els.statusMessage, "Set your data repo and token in Settings to sync ratings.");
+    setStatus(els.statusMessage, "Set your data repo and token in Settings to sync.");
     return;
   }
   await resolveCurrentUser();
-  await loadRatingsFromRepo();
+  await loadData();
 }
 
 init();

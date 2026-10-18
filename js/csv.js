@@ -1,17 +1,20 @@
-// CSV export. Each visit exports as its own row (see CLAUDE.md Section 9).
-// Pure conversion function plus a small DOM helper to trigger the download.
+// CSV export (CLAUDE.md Section 15.4): one row per visit, carrying its
+// restaurant's fields, plus one row per wishlist restaurant with the visit
+// columns left empty. Pure conversion plus a small download helper.
 
 const COLUMNS = [
-  "name",
-  "google_maps_url",
-  "status",
-  "rating",
-  "price_level",
-  "comment",
-  "tags",
-  "visited_at",
-  "created_by",
-  "created_at",
+  ["restaurant", (r) => r.name],
+  ["address", (r) => r.address],
+  ["lat", (r) => r.lat],
+  ["lng", (r) => r.lng],
+  ["google_maps_url", (r) => r.google_maps_url],
+  ["tags", (r) => (r.tags || []).join("; ")],
+  ["note", (r) => r.note],
+  ["visited_at", (r, v) => v?.visited_at],
+  ["rating", (r, v) => v?.rating],
+  ["price_level", (r, v) => v?.price_level],
+  ["comment", (r, v) => v?.comment],
+  ["created_by", (r, v) => (v || r).created_by],
 ];
 
 function escapeCsvField(value) {
@@ -22,20 +25,14 @@ function escapeCsvField(value) {
   return str;
 }
 
-export function ratingsToCsv(ratings) {
-  const header = COLUMNS.join(",");
-  const rows = ratings.map((visit) =>
-    COLUMNS.map((col) => {
-      const value =
-        col === "tags"
-          ? (visit.tags || []).join("; ")
-          : col === "status"
-            ? visit.status || "visited"
-            : visit[col];
-      return escapeCsvField(value);
-    }).join(",")
-  );
-  return [header, ...rows].join("\n");
+// `restaurants` are restaurant views (data.js buildRestaurantViews).
+export function restaurantsToCsv(restaurants) {
+  const rows = [COLUMNS.map(([name]) => name).join(",")];
+  for (const r of restaurants) {
+    const visits = r.visits.length ? r.visits : [null];
+    for (const v of visits) rows.push(COLUMNS.map(([, get]) => escapeCsvField(get(r, v))).join(","));
+  }
+  return rows.join("\n");
 }
 
 export function downloadCsv(csvText, filename = "foodlog-export.csv") {

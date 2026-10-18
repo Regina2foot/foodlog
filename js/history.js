@@ -4,7 +4,8 @@
 // textContent, never innerHTML (see CLAUDE.md Section 4.1).
 
 import { buildStarsDisplay, buildTagDot, formatPrice, formatDate, renderStarPicker, renderPricePicker, renderTagPicker } from "./render.js";
-import { isSafeHttpUrl } from "./maps.js";
+import { googleMapsLinkFor } from "./maps.js";
+import { hasLocation } from "./data.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -39,7 +40,7 @@ const CHART = {
 
 export function buildHistoryChart(visits) {
   const rated = visits
-    .filter((v) => (v.status || "visited") !== "wishlist" && v.rating !== null && v.rating !== undefined)
+    .filter((v) => v.rating !== null && v.rating !== undefined)
     .sort((a, b) => (a.visited_at || "").localeCompare(b.visited_at || ""));
   if (rated.length === 0) return null;
 
@@ -126,9 +127,8 @@ export function buildHistoryChart(visits) {
 }
 
 // One visit as a two-line card: date, stars, price and actions on top;
-// comment and tags underneath (only if there are any).
-function renderVisitCard(visit, tagColors, { onEdit, onDelete }) {
-  const isWishlist = visit.status === "wishlist";
+// the comment underneath (if any).
+function renderVisitCard(visit, { onEdit, onDelete }) {
   const card = el("div", { className: "visit-card" });
 
   const editButton = el("button", { type: "button", textContent: "Edit" });
@@ -140,22 +140,20 @@ function renderVisitCard(visit, tagColors, { onEdit, onDelete }) {
     }
   });
 
-  const top = el("div", { className: "visit-line" }, [
-    el("span", { className: "visit-date", textContent: isWishlist ? "Wishlist" : formatDate(visit.visited_at) || "—" }),
-    buildStarsDisplay(visit.rating),
-    el("span", { className: "visit-price", textContent: isWishlist ? "" : formatPrice(visit.price_level) }),
-    el("span", { className: "visit-actions" }, [editButton, deleteButton]),
-  ]);
-  card.appendChild(top);
-
-  const tags = visit.tags || [];
-  if (visit.comment || tags.length) {
-    const details = el("div", { className: "visit-line visit-details" });
-    if (visit.comment) details.appendChild(el("span", { className: "visit-comment", textContent: visit.comment }));
-    for (const tag of tags) {
-      details.appendChild(el("span", { className: "tag-chip" }, [buildTagDot(tag, tagColors), document.createTextNode(tag)]));
-    }
-    card.appendChild(details);
+  card.appendChild(
+    el("div", { className: "visit-line" }, [
+      el("span", { className: "visit-date", textContent: formatDate(visit.visited_at) || "—" }),
+      buildStarsDisplay(visit.rating ?? 0),
+      el("span", { className: "visit-price", textContent: formatPrice(visit.price_level) }),
+      el("span", { className: "visit-actions" }, [editButton, deleteButton]),
+    ])
+  );
+  if (visit.comment) {
+    card.appendChild(
+      el("div", { className: "visit-line visit-details" }, [
+        el("span", { className: "visit-comment", textContent: visit.comment }),
+      ])
+    );
   }
   return card;
 }
@@ -164,26 +162,61 @@ function labeled(labelText, control) {
   return el("label", { className: "edit-field" }, [document.createTextNode(labelText), control]);
 }
 
-function renderVisitEditForm(visit, allTags, tagColors, { onSave, onCancel }) {
+// Form for a visit: a new one (visit = null) or editing an existing one.
+// onSave(fields) gets { rating, price_level, comment, visited_at }.
+function renderVisitForm(visit, { onSave, onCancel }) {
   const card = el("div", { className: "visit-card visit-edit" });
 
-  const wishlistLabel = el("label", { className: "checkbox-label" });
-  const wishlistCheckbox = el("input", { type: "checkbox", checked: visit.status === "wishlist" });
-  wishlistLabel.append(wishlistCheckbox, document.createTextNode("Wishlist (not yet visited)"));
-
   const ratingPicker = el("span", { className: "star-picker" });
-  ratingPicker.dataset.value = String(visit.rating ?? 0);
+  ratingPicker.dataset.value = String(visit?.rating ?? 0);
   const pricePicker = el("span", { className: "price-picker" });
-  pricePicker.dataset.value = String(visit.price_level ?? 0);
+  pricePicker.dataset.value = String(visit?.price_level ?? 0);
   renderStarPicker(ratingPicker, () => {});
   renderPricePicker(pricePicker, () => {});
 
-  const commentInput = el("textarea", { rows: 2, value: visit.comment || "", placeholder: "Comment" });
-  const dateInput = el("input", { type: "date", value: visit.visited_at || "" });
+  const commentInput = el("textarea", { rows: 2, value: visit?.comment || "", placeholder: "How was it?" });
+  const dateInput = el("input", { type: "date", value: visit?.visited_at || new Date().toISOString().slice(0, 10) });
 
-  let selectedTags = [...(visit.tags || [])];
+  const saveButton = el("button", { type: "button", textContent: visit ? "Save" : "Add visit" });
+  saveButton.addEventListener("click", () => {
+    const price = Number(pricePicker.dataset.value || 0);
+    onSave({
+      rating: Number(ratingPicker.dataset.value || 0),
+      price_level: price > 0 ? price : null,
+      comment: commentInput.value.trim(),
+      visited_at: dateInput.value || new Date().toISOString().slice(0, 10),
+    });
+  });
+  const cancelButton = el("button", { type: "button", textContent: "Cancel" });
+  cancelButton.addEventListener("click", onCancel);
+
+  card.append(
+    el("div", { className: "edit-fields" }, [
+      labeled("Rating", ratingPicker),
+      labeled("Price", pricePicker),
+      labeled("Comment", commentInput),
+      labeled("Visit date", dateInput),
+    ]),
+    el("div", { className: "form-actions" }, [saveButton, cancelButton])
+  );
+  return card;
+}
+
+// Edit form for the restaurant itself (not a visit): name, Google link,
+// tags, note, plus "Delete restaurant".
+function renderRestaurantForm(restaurant, allTags, tagColors, { onSave, onCancel, onDelete }) {
+  const card = el("div", { className: "visit-card visit-edit" });
+  const nameInput = el("input", { type: "text", value: restaurant.name || "" });
+  const linkInput = el("input", {
+    type: "text",
+    value: restaurant.google_maps_url || "",
+    placeholder: "https://maps.app.goo.gl/...",
+  });
+  const noteInput = el("textarea", { rows: 2, value: restaurant.note || "", placeholder: "e.g. who recommended it" });
+
+  let selectedTags = [...(restaurant.tags || [])];
   const tagsContainer = el("div", { className: "tag-picker" });
-  const refreshTags = () => {
+  const refreshTags = () =>
     renderTagPicker(
       tagsContainer,
       allTags,
@@ -194,70 +227,124 @@ function renderVisitEditForm(visit, allTags, tagColors, { onSave, onCancel }) {
       },
       tagColors
     );
-  };
   refreshTags();
-
-  const visitedFields = el("div", { className: "edit-fields", hidden: visit.status === "wishlist" }, [
-    labeled("Rating", ratingPicker),
-    labeled("Price", pricePicker),
-    labeled("Comment", commentInput),
-    labeled("Visit date", dateInput),
-  ]);
-
-  wishlistCheckbox.addEventListener("change", () => {
-    visitedFields.hidden = wishlistCheckbox.checked;
-  });
 
   const saveButton = el("button", { type: "button", textContent: "Save" });
   saveButton.addEventListener("click", () => {
-    const isWishlist = wishlistCheckbox.checked;
-    onSave(visit.id, {
-      status: isWishlist ? "wishlist" : "visited",
-      rating: isWishlist ? null : Number(ratingPicker.dataset.value || 0),
-      price_level: isWishlist ? null : Number(pricePicker.dataset.value || 0),
-      comment: isWishlist ? "" : commentInput.value.trim(),
+    const name = nameInput.value.trim();
+    if (!name) {
+      nameInput.focus();
+      return;
+    }
+    onSave({
+      name,
+      google_maps_url: linkInput.value.trim(),
+      note: noteInput.value.trim(),
       tags: selectedTags,
-      visited_at: isWishlist ? null : dateInput.value || visit.visited_at,
     });
   });
   const cancelButton = el("button", { type: "button", textContent: "Cancel" });
   cancelButton.addEventListener("click", onCancel);
+  const deleteButton = el("button", { type: "button", textContent: "Delete restaurant", className: "danger-btn" });
+  deleteButton.addEventListener("click", () => {
+    const visits = restaurant.visits.length;
+    if (confirm(`Delete "${restaurant.name}"${visits ? ` and its ${visits} visit(s)` : ""}? This cannot be undone.`)) {
+      onDelete();
+    }
+  });
 
   card.append(
-    wishlistLabel,
-    visitedFields,
-    labeled("Tags", tagsContainer),
-    el("div", { className: "form-actions" }, [saveButton, cancelButton])
+    el("div", { className: "edit-fields" }, [
+      labeled("Name", nameInput),
+      labeled("Google Maps link (optional)", linkInput),
+      labeled("Tags", tagsContainer),
+      labeled("Note", noteInput),
+    ]),
+    el("div", { className: "form-actions" }, [saveButton, cancelButton, deleteButton])
   );
   return card;
 }
 
-// callbacks: onOpenMaps(url), onEdit(id), onCancelEdit(), onSaveEdit(id, changes), onDelete(id)
-// `allTags` is every tag seen anywhere, passed through to the edit form's tag picker;
-// `tagColors` (tag -> colour) colours tag chips and the picker.
-export function renderRestaurantDetail(container, restaurant, callbacks, editingVisitId = null, allTags = [], tagColors = new Map()) {
+// Detail view of one restaurant (CLAUDE.md Section 15.4). `restaurant` is a
+// restaurant view (data.js). `ui` = { editingRestaurant, addingVisit,
+// editingVisitId }. callbacks: onOpenMaps(url), onEditRestaurant(),
+// onSaveRestaurant(changes), onDeleteRestaurant(), onAddVisit(),
+// onSaveNewVisit(fields), onEditVisit(id), onSaveVisit(id, fields),
+// onDeleteVisit(id), onCancel() (closes whichever form is open).
+export function renderRestaurantDetail(container, restaurant, callbacks, ui, allTags = [], tagColors = new Map()) {
   container.textContent = "";
 
   container.appendChild(el("h2", { textContent: restaurant.name }));
 
-  const mapsButton = el("button", { type: "button", textContent: "Open in Google Maps" });
-  mapsButton.disabled = !isSafeHttpUrl(restaurant.google_maps_url);
-  mapsButton.addEventListener("click", () => callbacks.onOpenMaps(restaurant.google_maps_url));
-  container.appendChild(mapsButton);
+  if (ui.editingRestaurant) {
+    container.appendChild(
+      renderRestaurantForm(restaurant, allTags, tagColors, {
+        onSave: callbacks.onSaveRestaurant,
+        onCancel: callbacks.onCancel,
+        onDelete: callbacks.onDeleteRestaurant,
+      })
+    );
+  } else {
+    const info = el("div", { className: "restaurant-info" });
+    if (restaurant.address) info.appendChild(el("p", { className: "hint", textContent: restaurant.address }));
+    if (restaurant.tags.length) {
+      info.appendChild(
+        el(
+          "div",
+          { className: "visit-line" },
+          restaurant.tags.map((tag) =>
+            el("span", { className: "tag-chip" }, [buildTagDot(tag, tagColors), document.createTextNode(tag)])
+          )
+        )
+      );
+    }
+    if (restaurant.note) info.appendChild(el("p", { className: "restaurant-note", textContent: restaurant.note }));
+    info.appendChild(
+      el("p", {
+        className: "hint",
+        textContent: hasLocation(restaurant) ? "Location set." : "No location yet.",
+      })
+    );
+    container.appendChild(info);
 
-  const chartContainer = el("div", { className: "chart-container" });
-  const chart = buildHistoryChart(restaurant.visits);
-  if (chart) chartContainer.appendChild(chart);
-  else chartContainer.appendChild(el("p", { className: "hint", textContent: "No rated visits yet, so no chart." }));
-  container.appendChild(chartContainer);
+    const googleLink = googleMapsLinkFor(restaurant);
+    const mapsButton = el("button", { type: "button", textContent: "Open in Google Maps" });
+    mapsButton.disabled = !googleLink;
+    mapsButton.addEventListener("click", () => callbacks.onOpenMaps(googleLink));
+    const editButton = el("button", { type: "button", textContent: "Edit restaurant" });
+    editButton.addEventListener("click", callbacks.onEditRestaurant);
+    container.appendChild(el("div", { className: "form-actions detail-actions" }, [mapsButton, editButton]));
+  }
 
-  container.appendChild(el("h3", { textContent: "Visits" }));
+  if (restaurant.visits.length > 0) {
+    const chartContainer = el("div", { className: "chart-container" });
+    chartContainer.appendChild(buildHistoryChart(restaurant.visits));
+    container.appendChild(chartContainer);
+  }
+
+  const visitsHeader = el("div", { className: "visits-header" }, [el("h3", { textContent: "Visits" })]);
+  if (!ui.addingVisit) {
+    const addButton = el("button", { type: "button", textContent: "Add visit" });
+    addButton.addEventListener("click", callbacks.onAddVisit);
+    visitsHeader.appendChild(addButton);
+  }
+  container.appendChild(visitsHeader);
+
   const list = el("div", { className: "visit-list" });
+  if (ui.addingVisit) {
+    list.appendChild(renderVisitForm(null, { onSave: callbacks.onSaveNewVisit, onCancel: callbacks.onCancel }));
+  }
+  if (restaurant.visits.length === 0 && !ui.addingVisit) {
+    list.appendChild(el("p", { className: "hint", textContent: "Not visited yet — it's on your wishlist." }));
+  }
   for (const visit of restaurant.visits) {
     list.appendChild(
-      visit.id === editingVisitId
-        ? renderVisitEditForm(visit, allTags, tagColors, { onSave: callbacks.onSaveEdit, onCancel: callbacks.onCancelEdit })
-        : renderVisitCard(visit, tagColors, { onEdit: callbacks.onEdit, onDelete: callbacks.onDelete })
+      visit.id === ui.editingVisitId
+        ? renderVisitForm(visit, {
+            onSave: (fields) => callbacks.onSaveVisit(visit.id, fields),
+            onCancel: callbacks.onCancel,
+          })
+        : renderVisitCard(visit, { onEdit: callbacks.onEditVisit, onDelete: callbacks.onDeleteVisit })
     );
   }
   container.appendChild(list);

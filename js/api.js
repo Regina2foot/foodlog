@@ -1,6 +1,8 @@
 // GitHub Contents API access for the private data repo (see CLAUDE.md
 // Sections 5, 9, 12). No other external service is ever contacted.
 
+import { DATA_FILE, emptyDoc, normalizeDoc } from "./data.js";
+
 const API_BASE = "https://api.github.com";
 
 // No X-GitHub-Api-Version header here: GitHub's REST API doesn't include it
@@ -57,55 +59,60 @@ export async function fetchCurrentUser(token) {
   return data.login;
 }
 
-// Reads ratings.json from the data repo. Returns { ratings, sha }. A missing
-// file (empty repo edge case) resolves to an empty array with sha = null.
-export async function fetchRatings({ owner, repo, token }) {
-  const response = await request(
-    `${API_BASE}/repos/${owner}/${repo}/contents/ratings.json`,
-    { headers: authHeaders(token) }
-  );
+// Reads the data document (foodlog.json, CLAUDE.md Section 15.1). Returns
+// { doc, sha, isNew }. A missing file is a normal fresh start (isNew, empty
+// doc, sha null — the first save creates it). But a missing *repo* (wrong
+// owner/repo in Settings, or a token without access) is an error, so a
+// typo never silently looks like an empty list.
+export async function fetchDataDoc({ owner, repo, token }) {
+  const response = await request(`${API_BASE}/repos/${owner}/${repo}/contents/${DATA_FILE}`, {
+    headers: authHeaders(token),
+  });
 
   if (response.status === 404) {
-    // Could mean a genuinely new/empty data repo, but far more often means
-    // owner/repo doesn't exist or isn't accessible to this token (e.g. a
-    // typo). Callers should surface `notFound` rather than treat this the
-    // same as a confirmed-empty ratings list.
-    return { ratings: [], sha: null, notFound: true };
+    const repoResponse = await request(`${API_BASE}/repos/${owner}/${repo}`, { headers: authHeaders(token) });
+    if (repoResponse.status === 404) {
+      throw new GitHubApiError(
+        `Data repo ${owner}/${repo} not found. Check the exact owner/repo in Settings and that your token has access to it.`,
+        404
+      );
+    }
+    if (!repoResponse.ok) {
+      throw new GitHubApiError(`Failed to check the data repo (status ${repoResponse.status})`, repoResponse.status);
+    }
+    return { doc: emptyDoc(), sha: null, isNew: true };
   }
   if (!response.ok) {
-    throw new GitHubApiError(`Failed to read ratings.json (status ${response.status})`, response.status);
+    throw new GitHubApiError(`Failed to read ${DATA_FILE} (status ${response.status})`, response.status);
   }
 
   const data = await response.json();
   const jsonText = decodeBase64Utf8(data.content);
-  const ratings = jsonText.trim() === "" ? [] : JSON.parse(jsonText);
-  return { ratings, sha: data.sha };
+  const doc = normalizeDoc(jsonText.trim() === "" ? null : JSON.parse(jsonText));
+  return { doc, sha: data.sha, isNew: false };
 }
 
-// Writes the full ratings array back to ratings.json using the given base
-// sha. Throws GitHubApiError with status 409 on a write conflict so callers
+// Writes the whole document back using the given base sha (null creates the
+// file). Throws GitHubApiError with status 409 on a write conflict so callers
 // can reload, reapply, and retry (see CLAUDE.md Section 9).
-export async function saveRatings({ owner, repo, token, ratings, sha, message }) {
+export async function saveDataDoc({ owner, repo, token, doc, sha, message }) {
   const body = {
-    message: message || "Update ratings.json",
-    content: encodeBase64Utf8(JSON.stringify(ratings, null, 2)),
+    message: message || `Update ${DATA_FILE}`,
+    content: encodeBase64Utf8(JSON.stringify(doc, null, 2)),
   };
   if (sha) body.sha = sha;
 
-  const response = await request(
-    `${API_BASE}/repos/${owner}/${repo}/contents/ratings.json`,
-    {
-      method: "PUT",
-      headers: { ...authHeaders(token), "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    }
-  );
+  const response = await request(`${API_BASE}/repos/${owner}/${repo}/contents/${DATA_FILE}`, {
+    method: "PUT",
+    headers: { ...authHeaders(token), "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 
   if (response.status === 409) {
-    throw new GitHubApiError("Write conflict: ratings.json changed since last read", 409);
+    throw new GitHubApiError(`Write conflict: ${DATA_FILE} changed since last read`, 409);
   }
   if (!response.ok) {
-    throw new GitHubApiError(`Failed to write ratings.json (status ${response.status})`, response.status);
+    throw new GitHubApiError(`Failed to write ${DATA_FILE} (status ${response.status})`, response.status);
   }
 
   const data = await response.json();

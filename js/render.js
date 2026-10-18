@@ -196,12 +196,11 @@ export function renderListHeader(headerRow, mode = "visited", onToggleSelectAll,
 }
 
 // Renders the grouped restaurant list into `tbody`. `onRowClick` receives the
-// restaurant's groupKey so the caller can open the detail view (the Google
-// Maps link is optional, so groupKey — not google_maps_url — is what
-// uniquely identifies a restaurant/group; see state.js).
+// restaurant's id so the caller can open the detail view. `restaurants` are
+// restaurant views (data.js buildRestaurantViews).
 // `mode` ("visited" | "wishlist" | "duplicates") selects which columns to show.
-// `onToggleSelect(groupKey, checked)` fires from each row's checkbox;
-// `selectedKeys` (a Set of groupKeys) sets each checkbox's initial state.
+// `onToggleSelect(id, checked)` fires from each row's checkbox;
+// `selectedKeys` (a Set of restaurant ids) sets each checkbox's initial state.
 // Options: `groupStartKeys` marks rows that start a new duplicate group
 // (drawn with a separator); `emptyMessage` overrides the empty-list text.
 export function renderRestaurantList(
@@ -230,47 +229,42 @@ export function renderRestaurantList(
   for (const restaurant of restaurants) {
     const row = document.createElement("tr");
     row.tabIndex = 0;
-    if (groupStartKeys.has(restaurant.groupKey)) row.classList.add("dup-group-start");
+    if (groupStartKeys.has(restaurant.id)) row.classList.add("dup-group-start");
 
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
-    checkbox.checked = selectedKeys.has(restaurant.groupKey);
+    checkbox.checked = selectedKeys.has(restaurant.id);
     checkbox.setAttribute("aria-label", `Select ${restaurant.name}`);
     checkbox.addEventListener("click", (e) => e.stopPropagation());
-    checkbox.addEventListener("change", () => onToggleSelect(restaurant.groupKey, checkbox.checked));
+    checkbox.addEventListener("change", () => onToggleSelect(restaurant.id, checkbox.checked));
     row.append(cell("col-select", checkbox), cell("col-name", restaurant.name));
 
     const latest = restaurant.latest;
-    const tags = restaurantTags(restaurant);
+    const tags = restaurant.tags || [];
     if (mode === "wishlist") {
       row.append(
         cell("col-tags", buildTagDots(tags, tagColors)),
-        cell("col-date", formatDate(latest.created_at))
+        cell("col-date", formatDate(restaurant.created_at))
       );
     } else {
       row.append(
-        cell("col-rating", buildStarsDisplay(latest.rating)),
-        cell("col-price", latest.status === "wishlist" ? "" : formatPrice(latest.price_level)),
+        cell("col-rating", buildStarsDisplay(latest ? latest.rating : null)),
+        cell("col-price", latest ? formatPrice(latest.price_level) : ""),
         cell("col-tags", buildTagDots(tags, tagColors)),
-        cell("col-date", formatDate(latest.visited_at)),
-        cell("col-comment", latest.comment || "")
+        cell("col-date", formatDate(latest?.visited_at)),
+        cell("col-comment", latest?.comment || restaurant.note || "")
       );
     }
 
-    row.addEventListener("click", () => onRowClick(restaurant.groupKey));
+    row.addEventListener("click", () => onRowClick(restaurant.id));
     row.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
-        onRowClick(restaurant.groupKey);
+        onRowClick(restaurant.id);
       }
     });
     tbody.appendChild(row);
   }
-}
-
-// All tags across a restaurant's visits, in first-seen order.
-export function restaurantTags(restaurant) {
-  return [...new Set(restaurant.visits.flatMap((v) => v.tags || []))];
 }
 
 export function buildTagDot(tag, colors) {

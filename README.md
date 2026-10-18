@@ -16,7 +16,8 @@ no server, no build step, no framework.
 
 ## One-time setup (per person)
 
-1. Get access to the private data repo that holds `ratings.json` (ask
+1. Get access to the private data repo (the app stores everything in a
+   `foodlog.json` file there and creates it on the first save) (ask
    whoever owns it to invite you as a collaborator, or as an organization
    member — see the project's `CLAUDE.md` Section 10 for why this
    distinction matters).
@@ -63,7 +64,7 @@ Then open `http://localhost:8000` in a browser.
 Plain HTML/CSS/JavaScript, split into ES modules under `js/`:
 
 - `api.js` – GitHub Contents API access (read/write, conflict handling)
-- `state.js` – holding and updating the current list of ratings
+- `data.js` – the data document (restaurants + visits) and all changes to it
 - `render.js` – rendering the list/UI updates
 - `sort.js` – sorting logic
 - `csv.js` – CSV export

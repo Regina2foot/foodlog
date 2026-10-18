@@ -362,11 +362,6 @@ tbody tr {
   cursor: pointer;
 }
 
-#btn-delete-selected {
-  background: #c0392b;
-  color: #fff;
-  border-color: #c0392b;
-}
 
 tbody tr:hover {
   background: var(--bg-panel);
@@ -576,3 +571,35 @@ tbody tr:hover {
   font-size: 0.9rem;
 }
 
+
+.restaurant-info {
+  margin-bottom: 0.5rem;
+}
+
+.restaurant-info p {
+  margin: 0.25rem 0;
+}
+
+.restaurant-note {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.detail-actions {
+  flex-wrap: wrap;
+  margin: 0.5rem 0;
+}
+
+.visits-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.danger-btn,
+#btn-delete-selected {
+  background: #c0392b;
+  color: #fff;
+  border-color: #c0392b;
+}
