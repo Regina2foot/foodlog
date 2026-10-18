@@ -12,7 +12,7 @@ import { extractPlaceKey, normalizeName, createMatcher, findDuplicateGroups } fr
 
 // Bump on every change that gets pushed, so a device still running a
 // cached older app.js is easy to spot (shown at the bottom of Settings).
-const APP_VERSION = "2026-10-11e";
+const APP_VERSION = "2026-10-18a";
 
 // Phones have no visible error console; surface anything uncaught in the
 // status line instead of failing silently.
@@ -597,7 +597,9 @@ function showImportReview(items, summary, bulkTag) {
       label.append(radio, document.createTextNode(labelText));
       fieldset.appendChild(label);
     };
-    item.matches.slice(0, MAX_SHOWN_MATCHES).forEach((m, i) => addOption(`Same as "${m.restaurant.name}"`, i));
+    item.matches
+      .slice(0, MAX_SHOWN_MATCHES)
+      .forEach((m, i) => addOption(`Same as "${m.restaurant.name}" (in ${listNameOf(m.restaurant)})`, i));
     addOption("Different restaurant", "different");
     box.appendChild(fieldset);
   });
@@ -815,6 +817,11 @@ function hideDuplicateWarning() {
 
 const MAX_SHOWN_MATCHES = 3;
 
+// Which tab a matched restaurant lives in, so a match isn't confusing.
+function listNameOf(restaurant) {
+  return hasVisitedVisit(restaurant) ? "Rated" : "Wishlist";
+}
+
 function showDuplicateWarning(matches) {
   const box = els.duplicateWarning;
   box.textContent = "";
@@ -823,7 +830,7 @@ function showDuplicateWarning(matches) {
   const intro = document.createElement("p");
   intro.textContent =
     matches.length === 1
-      ? `This looks like "${matches[0].restaurant.name}" already in your list (${reasonText(matches[0].reason)}).`
+      ? `This looks like "${matches[0].restaurant.name}", already in your ${listNameOf(matches[0].restaurant)} list (${reasonText(matches[0].reason)}).`
       : "This looks like a restaurant already in your list:";
   box.appendChild(intro);
 
@@ -835,7 +842,7 @@ function showDuplicateWarning(matches) {
     button.textContent =
       matches.length === 1
         ? `Add as another visit to "${restaurant.name}"`
-        : `Add as visit to "${restaurant.name}" (${reasonText(reason)})`;
+        : `Add as visit to "${restaurant.name}" (in ${listNameOf(restaurant)}, ${reasonText(reason)})`;
     button.addEventListener("click", () => saveNewRating(buildRatingFromForm(), restaurant.groupKey));
     actions.appendChild(button);
   }
