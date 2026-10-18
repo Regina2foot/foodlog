@@ -222,6 +222,8 @@ extensions are easy, rather than requiring larger rewrites.
   - `duplicates.js` — place-ID extraction and name matching for duplicate
     detection (added later, Section 9)
   - `tagColors.js` — distinct per-tag colours (added later, Section 9)
+  - `mapView.js` — the Map tab (Leaflet + OSM tiles, Section 15.3);
+    not to be confused with `maps.js` (Google link handling)
   - `googleImport.js`, `settings.js` — Google Takeout import parsing;
     local settings storage + data-repo input parsing (added later)
   - `app.js` — wires the modules together, event handling, entry point
@@ -710,9 +712,12 @@ stay quick and reliable.
 ### 15.3 Locations and the map
 
 - **Map tab** (between List and New): Leaflet + OpenStreetMap tiles, one
-  marker per located restaurant, rated vs. wishlist visually distinct,
-  tap → small popup → open the restaurant. Same filters as the list
-  where it makes sense (Rated/Wishlist, tags, search)
+  circle marker per located restaurant (rated: filled orange; wishlist:
+  white with blue outline), tap → popup (name, stars, tag dots, Open) →
+  opens the restaurant in the List tab. Zooms to fit all markers the
+  first time; after that the view stays where the user left it. A line
+  above the map says how many restaurants have a location. Not built yet:
+  filters on the map (Rated/Wishlist, tags, search)
 - **Setting a location** on a restaurant (detail view → "Set location"):
   - automatically from a pasted Google link if it contains coordinates
     (`!3d…!4d…` or `@lat,lng`) — offline, no service involved
@@ -767,7 +772,8 @@ stay quick and reliable.
 1. [x] Spec (this section) + privacy/security updates in Sections 3.1/4.1
 2. [x] New data layer (`foodlog.json`, no migration) + all existing
        features ported to it, incl. the Google import
-3. [ ] Map tab showing located restaurants (Leaflet vendored + verified)
+3. [x] Map tab showing located restaurants (Leaflet 1.9.4 vendored in
+       `vendor/leaflet/`, checksums verified — see its README)
 4. [ ] Setting locations (link coordinates, Nominatim search, tap on
        map) + adding new restaurants from the map
 5. [ ] "Locate restaurants without a location" helper

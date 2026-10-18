@@ -4,6 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Foodlog</title>
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
 <link rel="stylesheet" href="css/style.css" />
 <link rel="manifest" href="manifest.json" />
 <link rel="icon" type="image/svg+xml" href="icons/logo.svg" />
@@ -22,6 +23,7 @@
 
 <nav class="tab-bar" role="tablist">
   <button type="button" class="tab active" role="tab" data-tab="list" aria-selected="true">List</button>
+  <button type="button" class="tab" role="tab" data-tab="map" aria-selected="false">Map</button>
   <button type="button" class="tab" role="tab" data-tab="new" aria-selected="false" aria-label="New rating">New</button>
   <button type="button" class="tab" role="tab" data-tab="settings" aria-selected="false">Settings</button>
   <button type="button" class="tab" role="tab" data-tab="import" aria-selected="false">Import</button>
@@ -74,6 +76,15 @@
     <button type="button" id="btn-back-to-list">← Back to list</button>
     <div id="detail-content"></div>
   </div>
+</section>
+
+<section class="tab-panel" data-tab-panel="map" hidden>
+  <p id="map-summary" class="hint map-summary"></p>
+  <div id="map" class="map-view" aria-label="Map of restaurants"></div>
+  <p class="hint map-legend">
+    <span class="legend-dot legend-rated"></span> Rated
+    <span class="legend-dot legend-wishlist"></span> Wishlist
+  </p>
 </section>
 
 <section class="tab-panel" data-tab-panel="new" hidden>
@@ -209,6 +220,7 @@
 </section>
 </main>
 
+<script src="vendor/leaflet/leaflet.js"></script>
 <script type="module" src="js/app.js"></script>
 </body>
 </html>

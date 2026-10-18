@@ -22,10 +22,11 @@ import { openMapsUrl, extractNameFromMapsUrl, extractCoordsFromMapsUrl } from ".
 import { restaurantsToCsv, downloadCsv } from "./csv.js";
 import { decodeImportFile, parseGoogleMapsExport, buildImport, applyImport } from "./googleImport.js";
 import { extractPlaceKey, normalizeName, createMatcher, findDuplicateGroups } from "./duplicates.js";
+import { renderMap } from "./mapView.js";
 
 // Bump on every change that gets pushed, so a device still running a
 // cached older app.js is easy to spot (shown at the bottom of Settings).
-const APP_VERSION = "2026-10-18c";
+const APP_VERSION = "2026-10-18d";
 
 // Phones have no visible error console; surface anything uncaught in the
 // status line instead of failing silently.
@@ -184,6 +185,9 @@ const els = {
   duplicateWarning: document.getElementById("duplicate-warning"),
   notSameButton: document.getElementById("btn-not-same"),
   importReview: document.getElementById("import-review"),
+  mapContainer: document.getElementById("map"),
+  mapSummary: document.getElementById("map-summary"),
+  mapPanel: document.querySelector('[data-tab-panel="map"]'),
 };
 
 function matchesNameSearch(restaurant) {
@@ -245,6 +249,26 @@ function refreshList() {
   syncSortControls();
   updateBulkActionButtons();
   refreshTagPicker();
+  refreshMap();
+}
+
+// Draws the Map tab, but only while it's visible (Leaflet needs its size).
+function refreshMap() {
+  if (els.mapPanel.hidden) return;
+  const shown = renderMap(els.mapContainer, views, {
+    tagColors,
+    onOpenRestaurant: (id) => {
+      renderTab("list");
+      showDetail(id);
+    },
+  });
+  const total = views.length;
+  els.mapSummary.textContent =
+    total === 0
+      ? "No restaurants yet."
+      : shown === total
+        ? `All ${total} restaurants are on the map.`
+        : `${shown} of ${total} restaurants have a location and are shown here. The others don't have one yet.`;
 }
 
 function allKnownTags() {
@@ -416,6 +440,7 @@ function renderTab(name) {
   }
   if (name === "list") showList();
   window.scrollTo(0, 0);
+  if (name === "map") refreshMap();
 }
 
 function showTab(name) {

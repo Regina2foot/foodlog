@@ -603,3 +603,66 @@ tbody tr:hover {
   color: #fff;
   border-color: #c0392b;
 }
+
+.map-summary {
+  margin: 0 0 0.5rem;
+}
+
+/* Fills most of the screen below the header and tabs; dvh accounts for a
+   phone's collapsing address bar where supported. */
+.map-view {
+  height: calc(100vh - 13rem);
+  height: calc(100dvh - 13rem);
+  min-height: 320px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.map-legend {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.4rem;
+}
+
+.legend-dot {
+  display: inline-block;
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 50%;
+  border: 2px solid;
+  margin-left: 0.5rem;
+}
+
+.legend-dot:first-child {
+  margin-left: 0;
+}
+
+.legend-rated {
+  background: #d4820a;
+  border-color: #a84f06;
+}
+
+.legend-wishlist {
+  background: #fff;
+  border-color: #3b7dd8;
+}
+
+.map-popup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 9rem;
+}
+
+.map-popup-line {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Leaflet's popup is always light; keep its text dark in dark mode too. */
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  color: #222;
+}
