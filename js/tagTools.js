@@ -4,7 +4,7 @@
 // through callbacks; the data changes themselves are pure functions in
 // data.js. Tag names are always set via textContent (Section 4.1).
 
-import { buildTagDot } from "./render.js";
+import { buildTagDot, buildNewTagControl } from "./render.js";
 
 function el(tag, props = {}, children = []) {
   const node = document.createElement(tag);
@@ -104,10 +104,7 @@ export function renderBulkTagEditor(container, allTags, selected, colors, { onAp
   [...allTags].sort(byName).forEach(addRow);
   container.appendChild(list);
 
-  const input = el("input", { type: "text", placeholder: "New tag", autocomplete: "off" });
-  const addNew = () => {
-    const tag = input.value.trim();
-    if (!tag) return;
+  const addNew = (tag) => {
     if (!state.has(tag)) {
       counts.set(tag, 0);
       initial.set(tag, "none");
@@ -117,15 +114,8 @@ export function renderBulkTagEditor(container, allTags, selected, colors, { onAp
       state.set(tag, "all");
       showers.get(tag)();
     }
-    input.value = "";
   };
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      addNew();
-    }
-  });
-  container.appendChild(el("div", { className: "tag-picker-add" }, [input, button("Add tag", addNew)]));
+  container.appendChild(buildNewTagControl(addNew));
 
   const apply = () => {
     const add = [...state].filter(([tag, s]) => s === "all" && initial.get(tag) !== "all").map(([tag]) => tag);

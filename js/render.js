@@ -99,31 +99,61 @@ export function renderTagPicker(container, allTags, selectedTags, onChange, colo
   }
   container.appendChild(list);
 
-  const addRow = document.createElement("div");
-  addRow.className = "tag-picker-add";
+  container.appendChild(
+    buildNewTagControl((value) => {
+      if (!selectedTags.includes(value)) onChange([...selectedTags, value]);
+    })
+  );
+}
+
+// A small "+ New tag" button; only tapping it shows a text box (with an
+// Add button) to type the tag. onAdd(tag) gets the trimmed text. Enter
+// adds; Escape, or leaving the box empty, folds it back to the button.
+export function buildNewTagControl(onAdd) {
+  const row = document.createElement("div");
+  row.className = "tag-picker-add";
+  const open = document.createElement("button");
+  open.type = "button";
+  open.className = "small-btn";
+  open.textContent = "+ New tag";
   const input = document.createElement("input");
   input.type = "text";
-  input.placeholder = "New tag";
-  const addButton = document.createElement("button");
-  addButton.type = "button";
-  addButton.textContent = "Add tag";
-  const addNewTag = () => {
-    const value = input.value.trim();
-    if (!value) return;
-    if (!selectedTags.includes(value)) {
-      onChange([...selectedTags, value]);
-    }
-    input.value = "";
+  input.placeholder = "Tag name";
+  input.autocomplete = "off";
+  const add = document.createElement("button");
+  add.type = "button";
+  add.className = "small-btn";
+  add.textContent = "Add";
+
+  const setOpen = (isOpen) => {
+    open.hidden = isOpen;
+    input.hidden = !isOpen;
+    add.hidden = !isOpen;
+    if (isOpen) input.focus();
+    else input.value = "";
   };
-  addButton.addEventListener("click", addNewTag);
+  const submit = () => {
+    const value = input.value.trim();
+    if (value) onAdd(value);
+    setOpen(false);
+  };
+  open.addEventListener("click", () => setOpen(true));
+  add.addEventListener("click", submit);
   input.addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       e.preventDefault();
-      addNewTag();
+      submit();
+    } else if (e.key === "Escape") {
+      setOpen(false);
     }
   });
-  addRow.append(input, addButton);
-  container.appendChild(addRow);
+  // Tapping "Add" also blurs the box first, so only fold up when empty.
+  input.addEventListener("blur", () => {
+    if (!input.value.trim()) setTimeout(() => setOpen(false), 150);
+  });
+  row.append(open, input, add);
+  setOpen(false);
+  return row;
 }
 
 // Short, locale-formatted date (e.g. "10.10.26" on a German phone).
