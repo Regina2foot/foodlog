@@ -65,6 +65,30 @@ export async function searchPlaces(query, viewbox = null) {
   return (Array.isArray(data) ? data : []).map(toPlace);
 }
 
+// Simpler versions of an address to try when the full text isn't found,
+// most specific first. Google adds things Nominatim doesn't know, e.g.
+// "Weichselstraße 44, 12045 Berlin-Bezirk Neukölln": first drop such
+// district additions ("12045 Berlin"), then keep only street + postal code.
+const DISTRICT_SUFFIX = /[\s-]+(Bezirk|Ortsteil|Stadtteil|Stadtbezirk|district|borough)\b.*$/i;
+
+export function addressVariants(text) {
+  const parts = text.split(",").map((p) => p.trim()).filter(Boolean);
+  const variants = [parts.join(", "), parts.map((p) => p.replace(DISTRICT_SUFFIX, "")).join(", ")];
+  const postcode = text.match(/\b\d{4,5}\b/);
+  if (parts.length > 1 && postcode && !parts[0].includes(postcode[0])) variants.push(`${parts[0]}, ${postcode[0]}`);
+  return [...new Set(variants.filter(Boolean))];
+}
+
+// Looks up an address, falling back to simpler versions of it (one
+// request each, still rate-limited) until something is found.
+export async function searchAddress(text, viewbox = null) {
+  for (const variant of addressVariants(text)) {
+    const places = await searchPlaces(variant, viewbox);
+    if (places.length > 0) return places;
+  }
+  return [];
+}
+
 // Categories that are actual venues (restaurants, bars, cafés, shops…), as
 // opposed to buildings, streets or areas.
 const VENUE_CATEGORIES = new Set(["amenity", "shop", "tourism", "leisure"]);

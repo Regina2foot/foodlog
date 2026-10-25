@@ -741,7 +741,11 @@ stay quick and reliable.
   marker with a popup whose button depends on the mode below
 - **Setting a location** on a restaurant:
   - New form: an **Address** field (e.g. copied from Google Maps) with a
-    **Find** button → Nominatim search for the address. One match is
+    **Find** button → Nominatim search for the address. If the full
+    text isn't found, simpler versions are tried in turn (`addressVariants`
+    in `geo.js`): without district additions Google uses (e.g.
+    "12045 Berlin-Bezirk Neukölln" → "12045 Berlin"), then only street +
+    postal code — one rate-limited request each. One match is
     taken; several are listed to pick from; none → hint to shorten the
     address or use the map. Shown under the field so a wrong match is
     caught before saving. Enter in the field also runs Find (doesn't
@@ -773,9 +777,10 @@ stay quick and reliable.
   not one commit per place. Can be stopped and resumed
 - Duplicate detection gains a location signal: similar name *and* within
   ~60 m is a strong match; same `osm` reference = same place
-- "Open in Google Maps": uses `google_maps_url` if present, otherwise a
-  Google Maps search link built from name + coordinates — opened like any
-  link, no Google service is called by the app itself
+- "Open in Google Maps" is always available: uses `google_maps_url` if
+  present, otherwise a Google Maps search for name + address, else the
+  coordinates, else just the name — opened like any link, no Google
+  service is called by the app itself
 
 ### 15.4 What changes in existing features
 

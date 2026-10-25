@@ -26,12 +26,12 @@ import { restaurantsToCsv, downloadCsv } from "./csv.js";
 import { decodeImportFile, parseGoogleMapsExport, buildImport, applyImport } from "./googleImport.js";
 import { extractPlaceKey, normalizeName, createMatcher, findDuplicateGroups } from "./duplicates.js";
 import { renderMap, onMapTap, visibleArea, focusRestaurant, showSearchResults, showCandidate, clearPicking } from "./mapView.js";
-import { searchPlaces, lookupPosition } from "./geo.js";
+import { searchPlaces, searchAddress, lookupPosition } from "./geo.js";
 import { renderTagManager, renderBulkTagEditor } from "./tagTools.js";
 
 // Bump on every change that gets pushed, so a device still running a
 // cached older app.js is easy to spot (shown at the bottom of Settings).
-const APP_VERSION = "2026-10-25b";
+const APP_VERSION = "2026-10-25c";
 
 // Phones have no visible error console; surface anything uncaught in the
 // status line instead of failing silently.
@@ -454,7 +454,7 @@ async function findAddress() {
   els.addressInput.blur();
   setStatus(els.statusMessage, "Looking up the address…");
   try {
-    const places = await searchPlaces(query, visibleArea());
+    const places = await searchAddress(query, visibleArea());
     if (places.length === 1) {
       useFoundAddress(places[0]);
       return;
