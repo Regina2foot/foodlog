@@ -943,3 +943,43 @@ tbody tr:hover {
   font-size: 0.9rem;
   opacity: 0.8;
 }
+
+/* Settings → History */
+.history-list {
+  list-style: none;
+  margin: 0.5rem 0;
+  padding: 0;
+}
+
+.history-item {
+  padding: 0.45rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.history-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.6rem;
+  margin-bottom: 0.3rem;
+}
+
+.history-when {
+  font-size: 0.85rem;
+  opacity: 0.75;
+  white-space: nowrap;
+}
+
+.history-message {
+  overflow-wrap: anywhere;
+}
+
+.history-details .form-actions {
+  margin-top: 0.4rem;
+}
+
+.history-missing {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0.4rem 0;
+}

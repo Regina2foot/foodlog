@@ -50,6 +50,9 @@ token** in Settings to clear it (e.g. on a shared computer).
   Sortable by rating, name, or date. Tick rows to delete or merge them,
   or to add/remove tags on all of them at once (**Tags…**).
 - **Settings → Tags**: rename or delete a tag everywhere.
+- **Settings → History**: every save is a version in the data repo. Pick
+  a save to see what existed before it and bring back deleted restaurants
+  (or, as a last resort, restore that whole state).
 - **Archive**: a closed restaurant can be archived (its page → Edit
   restaurant). It keeps its visits but leaves the lists and the map; tick
   Settings → Archive to see archived ones as a third list.
@@ -89,6 +92,7 @@ Plain HTML/CSS/JavaScript, split into ES modules under `js/`:
 - `mapView.js` – the Map tab (Leaflet + OpenStreetMap tiles)
 - `geo.js` – place search / lookup of a tapped spot (Nominatim)
 - `locate.js`, `locateView.js` – "Find locations" for restaurants without one
+- `restoreView.js` – Settings → History (bring back deleted restaurants)
 - `app.js` – wires the modules together, event handling, entry point
 
 See `CLAUDE.md` for the full project context, data model, and the

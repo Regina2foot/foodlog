@@ -186,3 +186,33 @@ export function changeTags(doc, ids, { add = [], remove = [] }) {
     }),
   };
 }
+
+// Restaurants that exist in an `older` version of the document but not in
+// `doc` now: [{ restaurant, visitCount, merged }]. `merged` = some of its
+// old visits still exist under another restaurant, i.e. it was merged
+// away rather than deleted (bringing it back would return it without
+// those visits).
+export function missingRestaurants(doc, older) {
+  const nowRestaurants = new Set(doc.restaurants.map((r) => r.id));
+  const nowVisits = new Set(doc.visits.map((v) => v.id));
+  return older.restaurants
+    .filter((r) => !nowRestaurants.has(r.id))
+    .map((restaurant) => {
+      const visits = older.visits.filter((v) => v.restaurant_id === restaurant.id);
+      return { restaurant, visitCount: visits.length, merged: visits.some((v) => nowVisits.has(v.id)) };
+    });
+}
+
+// Brings the given restaurants back from `older`, with the visits they had
+// then. Anything that exists again meanwhile (same id) is left alone, so
+// running it twice changes nothing.
+export function restoreRestaurants(doc, older, ids) {
+  const wanted = new Set(ids);
+  const nowRestaurants = new Set(doc.restaurants.map((r) => r.id));
+  const nowVisits = new Set(doc.visits.map((v) => v.id));
+  return {
+    ...doc,
+    restaurants: [...doc.restaurants, ...older.restaurants.filter((r) => wanted.has(r.id) && !nowRestaurants.has(r.id))],
+    visits: [...doc.visits, ...older.visits.filter((v) => wanted.has(v.restaurant_id) && !nowVisits.has(v.id))],
+  };
+}

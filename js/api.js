@@ -119,6 +119,46 @@ export async function saveDataDoc({ owner, repo, token, doc, sha, message }) {
   return { sha: data.content.sha };
 }
 
+// Recent saves of the data file, newest first (CLAUDE.md Section 15.4,
+// History): [{ sha, parentSha, date, message, author }]. `parentSha` is the
+// commit before this save, i.e. where to read the state from before it.
+export async function fetchDataHistory({ owner, repo, token }, page = 1) {
+  const params = new URLSearchParams({ path: DATA_FILE, per_page: "30", page: String(page) });
+  const response = await request(`${API_BASE}/repos/${owner}/${repo}/commits?${params}`, {
+    headers: authHeaders(token),
+  });
+  if (!response.ok) {
+    throw new GitHubApiError(`Failed to read the history (status ${response.status})`, response.status);
+  }
+  const commits = await response.json();
+  return commits.map((c) => ({
+    sha: c.sha,
+    parentSha: c.parents?.[0]?.sha || null,
+    date: c.commit?.author?.date || "",
+    message: (c.commit?.message || "").split("\n")[0],
+    author: c.author?.login || c.commit?.author?.name || "",
+  }));
+}
+
+// The data document as it was at commit `ref`, or null if the file didn't
+// exist yet at that point.
+export async function fetchDataDocAt({ owner, repo, token }, ref) {
+  const params = new URLSearchParams({ ref });
+  const response = await request(`${API_BASE}/repos/${owner}/${repo}/contents/${DATA_FILE}?${params}`, {
+    headers: authHeaders(token),
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    throw new GitHubApiError(`Failed to read an older version (status ${response.status})`, response.status);
+  }
+  const data = await response.json();
+  if (!data.content) {
+    throw new GitHubApiError(`That version of ${DATA_FILE} is too large to read here (over 1 MB)`, 0);
+  }
+  const jsonText = decodeBase64Utf8(data.content);
+  return normalizeDoc(jsonText.trim() === "" ? null : JSON.parse(jsonText));
+}
+
 function encodeBase64Utf8(text) {
   const bytes = new TextEncoder().encode(text);
   let binary = "";

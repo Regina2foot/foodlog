@@ -230,6 +230,7 @@ extensions are easy, rather than requiring larger rewrites.
     (Section 15.3), rate-limited and cached
   - `locate.js`, `locateView.js` — "Find locations" for restaurants
     without one: matching logic (no DOM) and the Map-tab panel
+  - `restoreView.js` — Settings → History (older versions, restore)
   - `googleImport.js`, `settings.js` — Google Takeout import parsing;
     local settings storage + data-repo input parsing (added later)
   - `app.js` — wires the modules together, event handling, entry point
@@ -870,7 +871,22 @@ stay quick and reliable.
   default) does the List get a third view, Rated / Wishlist /
   **Archived** (Rated columns, own sorting, default name A→Z). Duplicate
   detection still includes them (the warning says "in your Archived
-  list"), so a closed place isn't re-added by accident- **Bulk tags** (added 2026-10): with rows ticked, a "Tags… (n)" button
+  list"), so a closed place isn't re-added by accident
+- **History / restore** (Settings → History, added 2026-10): every save
+  is a commit in the data repo, so older versions can be read back with
+  the same token (`GET …/commits?path=foodlog.json`, 30 per page, "Show
+  older saves"; `GET …/contents/foodlog.json?ref=<sha>`). Loaded only on
+  tapping "Show recent saves". Each save (date, commit message) has
+  "Before this save…", which reads the version at its parent commit and
+  lists restaurants that existed then but are gone now
+  (`missingRestaurants`): tick → "Bring back ticked" re-adds them with
+  their visits from then (`restoreRestaurants`; anything that exists again
+  is left alone; ones merged away since are labelled, as they'd come back
+  without the moved visits). Nothing else changes. Last resort: "Restore
+  everything to this state" (confirmation) writes that whole version as a
+  new save. Both are ordinary new commits, so they can be undone the same
+  way. Not covered: bringing back a single deleted visit of a restaurant
+  that still exists (restore the whole version, or re-enter it)- **Bulk tags** (added 2026-10): with rows ticked, a "Tags… (n)" button
   opens a panel listing every tag with a checkbox showing whether all
   (checked), some (dash, "n of m") or none of the ticked restaurants have
   it. Tapping cycles all → none → back to "some" (= leave as is, only for

@@ -11,6 +11,7 @@ import {
   renameTag,
   deleteTag,
   changeTags,
+  restoreRestaurants,
   generateId,
   hasLocation,
   DATA_FILE,
@@ -29,7 +30,7 @@ import {
   getShowArchived,
   saveShowArchived,
 } from "./settings.js";
-import { fetchDataDoc, saveDataDoc, fetchCurrentUser, GitHubApiError } from "./api.js";
+import { fetchDataDoc, saveDataDoc, fetchCurrentUser, fetchDataHistory, fetchDataDocAt, GitHubApiError } from "./api.js";
 import { renderRestaurantDetail } from "./history.js";
 import { openMapsUrl } from "./maps.js";
 import { restaurantsToCsv, downloadCsv } from "./csv.js";
@@ -39,10 +40,11 @@ import { renderMap, onMapTap, visibleArea, focusRestaurant, showSearchResults, s
 import { searchWithFallbacks, lookupPosition } from "./geo.js";
 import { renderTagManager, renderBulkTagEditor } from "./tagTools.js";
 import { createLocatePanel } from "./locateView.js";
+import { createRestorePanel } from "./restoreView.js";
 
 // Bump on every change that gets pushed, so a device still running a
 // cached older app.js is easy to spot (shown at the bottom of Settings).
-const APP_VERSION = "2026-10-25g";
+const APP_VERSION = "2026-10-25h";
 
 // Phones have no visible error console; surface anything uncaught in the
 // status line instead of failing silently.
@@ -223,6 +225,7 @@ const els = {
   tagsSelectedButton: document.getElementById("btn-tags-selected"),
   bulkTagsPanel: document.getElementById("bulk-tags-panel"),
   tagManager: document.getElementById("tag-manager"),
+  historyPanel: document.getElementById("history-panel"),
   importReview: document.getElementById("import-review"),
   mapContainer: document.getElementById("map"),
   mapSummary: document.getElementById("map-summary"),
@@ -567,6 +570,34 @@ function initLocatePanel() {
       els.mapContainer.scrollIntoView({ behavior: "smooth", block: "center" });
     },
     setStatus: (text, isError = false) => setStatus(els.statusMessage, text, isError),
+    describeError,
+  });
+}
+
+// Settings → History: bring back deleted restaurants from an older version,
+// or restore a whole older version. Both are ordinary new saves.
+function initRestorePanel() {
+  const restore = async (mutate, message, doneText) => {
+    setStatus(els.statusMessage, "Saving…");
+    try {
+      await writeWithConflictRetry(mutate, { message });
+      refreshList();
+      setStatus(els.statusMessage, doneText);
+    } catch (err) {
+      setStatus(els.statusMessage, describeError(err, "Failed to restore"), true);
+    }
+  };
+  createRestorePanel(els.historyPanel, {
+    fetchHistory: (page) => fetchDataHistory(getSettings(), page),
+    fetchVersion: (ref) => fetchDataDocAt(getSettings(), ref),
+    getDoc: () => doc,
+    restoreSelected: (older, ids) =>
+      restore(
+        (d) => restoreRestaurants(d, older, ids),
+        `Bring back ${ids.length} restaurant(s) from an older version`,
+        `Brought back ${ids.length} restaurant(s).`
+      ),
+    restoreAll: (older, label) => restore(() => older, `Restore the version ${label}`, "Restored that version."),
     describeError,
   });
 }
@@ -1418,6 +1449,7 @@ async function init() {
   initImport();
   initMapPicking();
   initLocatePanel();
+  initRestorePanel();
   initWishlistToggle();
   initRatingForm();
   initSortControls();
