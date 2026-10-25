@@ -247,7 +247,7 @@ function renderRestaurantForm(restaurant, allTags, tagColors, { onSave, onCancel
   return card;
 }
 
-// Detail view of one restaurant (CLAUDE.md Section 15.4). `restaurant` is a
+// Detail view of one restaurant (CLAUDE.md Section 9.4). `restaurant` is a
 // restaurant view (data.js). `ui` = { editingRestaurant, addingVisit,
 // editingVisitId }. callbacks: onOpenMaps(url), onShowOnMap(),
 // onSetLocation(), onEditRestaurant(),

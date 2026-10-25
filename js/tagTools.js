@@ -1,4 +1,4 @@
-// Tag management UI (CLAUDE.md Section 15.4): the "Tags" list in Settings
+// Tag management UI (CLAUDE.md Section 9.9): the "Tags" list in Settings
 // (rename or delete a tag on every restaurant) and the "Tags…" panel for
 // the ticked restaurants in the list. Only builds DOM and reports choices
 // through callbacks; the data changes themselves are pure functions in

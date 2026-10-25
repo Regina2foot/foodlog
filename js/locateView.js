@@ -1,4 +1,4 @@
-// "Find locations" panel on the Map tab (CLAUDE.md Section 15.3): asks
+// "Find locations" panel on the Map tab (CLAUDE.md Section 9.7): asks
 // where the places are, works through the restaurants without a location
 // (locate.js), saves confident matches in batches and lists the rest for
 // the user to decide. Text is set via textContent only (Section 4.1).

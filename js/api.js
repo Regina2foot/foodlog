@@ -59,7 +59,7 @@ export async function fetchCurrentUser(token) {
   return data.login;
 }
 
-// Reads the data document (foodlog.json, CLAUDE.md Section 15.1). Returns
+// Reads the data document (foodlog.json, CLAUDE.md Section 8). Returns
 // { doc, sha, isNew }. A missing file is a normal fresh start (isNew, empty
 // doc, sha null — the first save creates it). But a missing *repo* (wrong
 // owner/repo in Settings, or a token without access) is an error, so a
@@ -94,7 +94,7 @@ export async function fetchDataDoc({ owner, repo, token }) {
 
 // Writes the whole document back using the given base sha (null creates the
 // file). Throws GitHubApiError with status 409 on a write conflict so callers
-// can reload, reapply, and retry (see CLAUDE.md Section 9).
+// can reload, reapply, and retry (see CLAUDE.md Section 9.15).
 export async function saveDataDoc({ owner, repo, token, doc, sha, message }) {
   const body = {
     message: message || `Update ${DATA_FILE}`,
@@ -119,7 +119,7 @@ export async function saveDataDoc({ owner, repo, token, doc, sha, message }) {
   return { sha: data.content.sha };
 }
 
-// Recent saves of the data file, newest first (CLAUDE.md Section 15.4,
+// Recent saves of the data file, newest first (CLAUDE.md Section 9.13,
 // History): [{ sha, parentSha, date, message, author }]. `parentSha` is the
 // commit before this save, i.e. where to read the state from before it.
 export async function fetchDataHistory({ owner, repo, token }, page = 1) {

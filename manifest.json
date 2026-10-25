@@ -1,7 +1,7 @@
 {
   "name": "Foodlog",
   "short_name": "Foodlog",
-  "description": "Rate restaurants and browse them by Google Maps link, star rating, and price level.",
+  "description": "Rate restaurants, keep a wishlist and see them all on a map.",
   "start_url": ".",
   "scope": ".",
   "display": "standalone",

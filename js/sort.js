@@ -28,7 +28,7 @@ export function sortRestaurants(restaurants, field, dir = "desc") {
   }
 }
 
-// Map tab filter (CLAUDE.md Section 15.3). `ratings`: a Set of
+// Map tab filter (CLAUDE.md Section 9.5). `ratings`: a Set of
 // "wishlist" and/or star values "0"–"5" (judged by the latest visit, like
 // the list), any combination; empty = everything. `tags`: a Set — empty =
 // any; otherwise the restaurant needs at least one of them.

@@ -1,5 +1,5 @@
 // The data document stored as foodlog.json in the data repo (CLAUDE.md
-// Section 15.1): { version, restaurants: [...], visits: [...] }.
+// Section 8): { version, restaurants: [...], visits: [...] }.
 // Pure functions only — every change returns a new document, so the
 // write-conflict retry can re-apply a change to freshly fetched data.
 
@@ -91,7 +91,7 @@ export function deleteVisit(doc, id) {
   return { ...doc, visits: doc.visits.filter((v) => v.id !== id) };
 }
 
-// Merges restaurants into one (Section 15.1): the one with the most visits
+// Merges restaurants into one (Section 8): the one with the most visits
 // (then the oldest) is kept; the others' visits move onto it; tags are
 // united, notes joined; location, address, osm and link are filled from
 // the others where the kept one has none; references to the removed ones

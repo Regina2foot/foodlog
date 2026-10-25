@@ -37,7 +37,7 @@ export function saveShowArchived(show) {
   else localStorage.removeItem(KEY_SHOW_ARCHIVED);
 }
 
-// Last area typed into "Find locations" (Section 15.3) — only suggested
+// Last area typed into "Find locations" (Section 9.7) — only suggested
 // next time, never hardcoded.
 const KEY_LOCATE_AREA = "foodlog_locate_area";
 

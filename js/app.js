@@ -44,7 +44,7 @@ import { createRestorePanel } from "./restoreView.js";
 
 // Bump on every change that gets pushed, so a device still running a
 // cached older app.js is easy to spot (shown at the bottom of Settings).
-const APP_VERSION = "2026-10-25l";
+const APP_VERSION = "2026-10-25m";
 
 // Phones have no visible error console; surface anything uncaught in the
 // status line instead of failing silently.
@@ -55,7 +55,7 @@ function showUnexpectedError(err) {
 window.addEventListener("error", (e) => showUnexpectedError(e.error || e.message));
 window.addEventListener("unhandledrejection", (e) => showUnexpectedError(e.reason));
 
-// The data document (foodlog.json, CLAUDE.md Section 15.1) and its blob sha.
+// The data document (foodlog.json, CLAUDE.md Section 8) and its blob sha.
 let doc = emptyDoc();
 let sha = null;
 let views = []; // restaurant views (data.js), rebuilt in refreshList()
@@ -99,7 +99,7 @@ let detailId = null;
 const closedDetailUi = () => ({ editingRestaurant: false, addingVisit: false, editingVisitId: null });
 let detailUi = closedDetailUi();
 
-// Map tab "choose a location" mode (CLAUDE.md Section 15.3):
+// Map tab "choose a location" mode (CLAUDE.md Section 9.6):
 // null = just browsing; { type: "restaurant", id, name } = for an existing
 // restaurant; { type: "form" } = for the New form.
 let mapPick = null;
@@ -114,7 +114,7 @@ let pendingFocusId = null;
 
 // Applies `mutate` (doc -> doc) and writes the result to the data repo,
 // re-fetching the latest document/sha first and retrying once on a 409
-// write conflict (see CLAUDE.md Section 9).
+// write conflict (see CLAUDE.md Section 9.15).
 async function writeWithConflictRetry(mutate, { message, maxAttempts = 2 } = {}) {
   const { owner, repo, token } = getSettings();
   let lastError;
@@ -260,7 +260,7 @@ function refreshList() {
     sorted = groups.flat();
     mode = "duplicates";
   } else {
-    // Rated = has at least one visit; Wishlist = no visits (Section 15.1).
+    // Rated = has at least one visit; Wishlist = no visits (Section 8).
     // Archived restaurants only show in their own view (if enabled).
     const inView = views.filter((r) =>
       listView === "archived" ? r.isArchived : !r.isArchived && (listView === "wishlist" ? r.isWishlist : !r.isWishlist)

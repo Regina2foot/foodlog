@@ -1,4 +1,4 @@
-// Settings → History (CLAUDE.md Section 15.4): the recent saves of the data
+// Settings → History (CLAUDE.md Section 9.13): the recent saves of the data
 // file (each one is a git commit in the data repo), and for any of them a
 // look at the state *before* it — to bring back restaurants deleted since,
 // or, as a last resort, to restore that whole state. A restore is itself a

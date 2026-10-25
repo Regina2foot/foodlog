@@ -1,4 +1,4 @@
-// "Find locations" (CLAUDE.md Section 15.3): finds each restaurant by name
+// "Find locations" (CLAUDE.md Section 9.7): finds each restaurant by name
 // inside one area the user names per run. No DOM here; the panel is in
 // locateView.js. Every search goes through geo.js, so the Nominatim limit
 // of 1 request per second always holds.

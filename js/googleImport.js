@@ -169,7 +169,7 @@ export function parseGoogleMapsExport(text) {
   };
 }
 
-// Turns parsed entries into new restaurants (CLAUDE.md Section 15.4): one
+// Turns parsed entries into new restaurants (CLAUDE.md Section 9.11): one
 // restaurant per place, plus a first visit when the note carried an N/10
 // rating (its comment keeps the note verbatim). Without a rating the note
 // becomes the restaurant's own note, i.e. a wishlist place. `bulkTag` (the
@@ -199,7 +199,7 @@ export function buildImport(entries, { createdBy, isKnownPlace, generateId, bulk
     };
     if (coords) Object.assign(restaurant, coords);
     // The export has no real visit date, so a rated place gets the import
-    // date (Section 11.3).
+    // date (Section 9.11).
     const visit = rated
       ? {
           id: generateId(),

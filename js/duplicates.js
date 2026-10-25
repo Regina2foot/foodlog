@@ -2,7 +2,7 @@
 // short share links (maps.app.goo.gl/...) can't be resolved without asking
 // Google (CLAUDE.md Section 3.1), so those fall back to name similarity.
 //
-// Matches are between restaurants (CLAUDE.md Sections 9, 15.3): same
+// Matches are between restaurants (CLAUDE.md Section 9.8): same
 // Google place / same OSM reference ("place"), similar name at the same
 // spot ("nearby"), or similar name only ("name"). Never acted on
 // automatically — the user decides.
@@ -140,7 +140,7 @@ function compareProfiles(p, q) {
 const REASON_ORDER = { place: 0, nearby: 1, name: 2 };
 
 // "Not the same restaurant" decisions: restaurant ids in `not_same_as`
-// (CLAUDE.md Section 15.1), checked in both directions.
+// (CLAUDE.md Section 8), checked in both directions.
 function markedDifferent(a, b) {
   return (a.not_same_as || []).includes(b.id) || (b.not_same_as || []).includes(a.id);
 }

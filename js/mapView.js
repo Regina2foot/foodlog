@@ -1,4 +1,4 @@
-// Map tab (CLAUDE.md Section 15.3): Leaflet (vendored, global `L`) with
+// Map tab (CLAUDE.md Section 9.5): Leaflet (vendored, global `L`) with
 // OpenStreetMap tiles — the only map service contacted (Section 3.1).
 // Restaurant text is always set via textContent, never as HTML.
 

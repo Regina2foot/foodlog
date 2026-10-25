@@ -1,8 +1,9 @@
 # Foodlog
 
-A small web app to rate restaurants (0–5 stars, comment), sortable by
-rating, with a map (OpenStreetMap). Runs entirely in the browser —
-no server, no build step, no framework.
+A small web app to rate restaurants (0–5 stars, comment) and keep a
+wishlist of places to try, with a map (OpenStreetMap) and links to Google
+Maps. Runs entirely in the browser — no server, no build step, no
+framework.
 
 ## How it works
 
@@ -11,8 +12,12 @@ no server, no build step, no framework.
 - Ratings are stored as JSON in a **separate, private** data repo, read and
   written at runtime through the GitHub Contents API.
 - Each person uses their own GitHub Personal Access Token, stored only in
-  their own browser's `localStorage`. Nothing is ever sent anywhere except
-  to the GitHub API for the data repo you configure.
+  their own browser's `localStorage`.
+- The only other services the app talks to: **OpenStreetMap** for the map
+  images, and **Nominatim** (OpenStreetMap's place search) for searches
+  and "what's here?" lookups — only the search text or tapped position is
+  sent, never ratings, comments, tags or your token. No analytics, no
+  tracking.
 
 ## One-time setup (per person)
 
@@ -37,32 +42,31 @@ token** in Settings to clear it (e.g. on a shared computer).
 
 ## Using the app
 
-- **New**: enter the name, optionally put it on the map ("Set location on
-  map"), then rate it or mark it as "haven't been yet". If it looks like a restaurant you
-  already have, the app offers to add the visit there instead.
-- **Map**: your restaurants on an OpenStreetMap map; search for a place
-  (or paste an address, e.g. from Google Maps) or tap the map to add one.
-  Dots show the restaurant's tag colours; filter by rating and tags above
-  the map.
+- **List**: one row per restaurant with its latest rating, in **Rated**
+  and **Wishlist** (places you haven't been to yet). Sort, filter by tag,
+  search by name, or show possible duplicates. Tick rows to delete or
+  merge them, or to add/remove tags on all of them at once (**Tags…**).
+- Tap a row for the **restaurant page**: all visits, a rating-over-time
+  chart, location, two Google Maps buttons (by address, and by the link
+  saved from an import — to compare them), and **Edit restaurant**
+  (name, tags, note, archive, delete).
+- **Map**: your restaurants as dots in their tag colours (solid = rated,
+  ring = wishlist); filter by stars and tags. Search a place or paste an
+  address (e.g. from Google Maps), or tap the map, to add one.
   **Find locations…** looks up restaurants that have no location yet
-  (e.g. after an import) by name in an area you name, like "Berlin".
-- **List**: one row per restaurant, showing its most recent visit.
-  Sortable by rating, name, or date. Tick rows to delete or merge them,
-  or to add/remove tags on all of them at once (**Tags…**).
-- **Settings → Tags**: rename or delete a tag everywhere.
-- **Settings → History**: every save is a version in the data repo. Pick
-  a save to see what existed before it and bring back deleted restaurants
-  (or, as a last resort, restore that whole state).
-- **Archive**: a closed restaurant can be archived (its page → Edit
-  restaurant). It keeps its visits but leaves the lists and the map; tick
-  Settings → Archive to see archived ones as a third list.
-- Click a row to open the **restaurant detail view**: full visit history,
-  a rating-over-time chart, and an "Open in Google Maps" button.
-  Edit or delete individual visits from there.
-- **Refresh**: reloads the latest data from the data repo.
-- **Import/Export** tab: Google Maps import on top; **Download CSV**
-  below it downloads the currently loaded data as a CSV file, one
-  row per visit.
+  (e.g. after an import) by name in an area you name, like "Berlin" — it
+  only places them automatically when the match is unambiguous.
+- **New**: name, location ("Set location on map"), tags, note, then a
+  rating (the meaning of each star is shown) or "haven't been yet". If it
+  looks like a restaurant you already have, the app offers to add the
+  visit there instead.
+- **Settings**: data repo and token; **Archive** (show closed
+  restaurants as a third list); **Tags** (rename or delete a tag
+  everywhere); **History** (every save is a version — bring back deleted
+  restaurants, or restore a whole older state).
+- **Import/Export**: import a Google Maps list (Google Takeout CSV); below
+  it, **Download CSV** of everything, one row per visit.
+- **↻** reloads the data and checks for a new app version.
 
 ## Local development
 
@@ -78,13 +82,13 @@ Then open `http://localhost:8000` in a browser.
 
 Plain HTML/CSS/JavaScript, split into ES modules under `js/`:
 
-- `api.js` – GitHub Contents API access (read/write, conflict handling)
+- `api.js` – GitHub API access (read/write, history)
 - `data.js` – the data document (restaurants + visits) and all changes to it
-- `render.js` – rendering the list/UI updates
-- `sort.js` – sorting logic
+- `render.js` – list rendering, stars, tag pickers and chips
+- `sort.js` – list sorting and the map filter
 - `csv.js` – CSV export
 - `maps.js` – Google Maps link handling and validation
-- `history.js` – restaurant detail view, visit history, rating chart
+- `history.js` – the restaurant page (visits, rating chart, edit forms)
 - `settings.js` – local (localStorage) runtime settings
 - `googleImport.js` – Google Takeout CSV import
 - `duplicates.js` – duplicate detection (same Google place / similar name)

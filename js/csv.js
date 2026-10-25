@@ -1,4 +1,4 @@
-// CSV export (CLAUDE.md Section 15.4): one row per visit, carrying its
+// CSV export (CLAUDE.md Section 9.12): one row per visit, carrying its
 // restaurant's fields, plus one row per wishlist restaurant with the visit
 // columns left empty. Pure conversion plus a small download helper.
 
