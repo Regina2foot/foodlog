@@ -44,7 +44,9 @@ token** in Settings to clear it (e.g. on a shared computer).
 - **Map**: your restaurants on an OpenStreetMap map; search for a place
   or tap the map to add one.
 - **List**: one row per restaurant, showing its most recent visit.
-  Sortable by rating, name, or date.
+  Sortable by rating, name, or date. Tick rows to delete or merge them,
+  or to add/remove tags on all of them at once (**Tags…**).
+- **Settings → Tags**: rename or delete a tag everywhere.
 - Click a row to open the **restaurant detail view**: full visit history,
   a rating-over-time chart, and an "Open in Google Maps" button.
   Edit or delete individual visits from there.
@@ -77,6 +79,7 @@ Plain HTML/CSS/JavaScript, split into ES modules under `js/`:
 - `googleImport.js` – Google Takeout CSV import
 - `duplicates.js` – duplicate detection (same Google place / similar name)
 - `tagColors.js` – one distinct colour per tag (computed, not stored)
+- `tagTools.js` – renaming/deleting tags and the bulk tag panel
 - `mapView.js` – the Map tab (Leaflet + OpenStreetMap tiles)
 - `geo.js` – place search / lookup of a tapped spot (Nominatim)
 - `app.js` – wires the modules together, event handling, entry point

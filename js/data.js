@@ -146,3 +146,40 @@ export function markRestaurantsDifferent(doc, ids) {
     ),
   };
 }
+
+// Renames a tag on every restaurant. Renaming to a tag that already exists
+// merges the two (a restaurant never ends up with the same tag twice). The
+// tag keeps its place in each list, so its colour usually stays the same.
+export function renameTag(doc, from, to) {
+  return {
+    ...doc,
+    restaurants: doc.restaurants.map((r) =>
+      (r.tags || []).includes(from) ? { ...r, tags: [...new Set(r.tags.map((t) => (t === from ? to : t)))] } : r
+    ),
+  };
+}
+
+// Removes a tag from every restaurant (the restaurants themselves stay).
+export function deleteTag(doc, tag) {
+  return {
+    ...doc,
+    restaurants: doc.restaurants.map((r) =>
+      (r.tags || []).includes(tag) ? { ...r, tags: r.tags.filter((t) => t !== tag) } : r
+    ),
+  };
+}
+
+// For the given restaurants: adds every tag in `add` (if missing) and
+// removes every tag in `remove`.
+export function changeTags(doc, ids, { add = [], remove = [] }) {
+  const idSet = new Set(ids);
+  const removeSet = new Set(remove);
+  return {
+    ...doc,
+    restaurants: doc.restaurants.map((r) => {
+      if (!idSet.has(r.id)) return r;
+      const kept = (r.tags || []).filter((t) => !removeSet.has(t));
+      return { ...r, tags: [...new Set([...kept, ...add])] };
+    }),
+  };
+}

@@ -737,3 +737,63 @@ form label.address-label {
   gap: 0.4rem 0.6rem;
   margin: 0.25rem 0 0.5rem;
 }
+
+/* Tags: bulk "Tags…" panel in the list, and the Tags list in Settings.
+   Both live outside a <form>, so their text inputs are styled here. */
+.bulk-tags-panel {
+  margin: 0.5rem 0;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.bulk-tags-panel .hint {
+  margin: 0.25rem 0;
+}
+
+.bulk-tags-panel .form-actions {
+  margin-top: 0.6rem;
+}
+
+.bulk-tags-panel input[type="text"],
+.tag-manager input[type="text"] {
+  min-width: 0;
+  padding: 0.4rem;
+  font-size: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+}
+
+.tag-manager {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tag-manager-item {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.tag-manager-item:last-child {
+  border-bottom: none;
+}
+
+.tag-manager-name {
+  overflow-wrap: anywhere;
+}
+
+/* Buttons go to the right end; the rename input takes the free space. */
+.tag-manager-item .hint {
+  margin-right: auto;
+}
+
+.tag-manager-item input[type="text"] {
+  flex: 1;
+}

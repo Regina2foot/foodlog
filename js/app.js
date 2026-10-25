@@ -8,6 +8,9 @@ import {
   deleteVisit,
   mergeRestaurants,
   markRestaurantsDifferent,
+  renameTag,
+  deleteTag,
+  changeTags,
   generateId,
   hasLocation,
   DATA_FILE,
@@ -24,10 +27,11 @@ import { decodeImportFile, parseGoogleMapsExport, buildImport, applyImport } fro
 import { extractPlaceKey, normalizeName, createMatcher, findDuplicateGroups } from "./duplicates.js";
 import { renderMap, onMapTap, visibleArea, focusRestaurant, showSearchResults, showCandidate, clearPicking } from "./mapView.js";
 import { searchPlaces, lookupPosition } from "./geo.js";
+import { renderTagManager, renderBulkTagEditor } from "./tagTools.js";
 
 // Bump on every change that gets pushed, so a device still running a
 // cached older app.js is easy to spot (shown at the bottom of Settings).
-const APP_VERSION = "2026-10-25a";
+const APP_VERSION = "2026-10-25b";
 
 // Phones have no visible error console; surface anything uncaught in the
 // status line instead of failing silently.
@@ -66,6 +70,7 @@ let listView = "visited"; // "visited" (Rated) | "wishlist"
 let tagFilter = ""; // "" = all tags
 let tagColors = new Map(); // tag -> colour, recomputed whenever the list is rendered
 let formTags = []; // New form's current tag selection
+let renamingTag = null; // tag whose rename input is open in Settings
 let showDuplicates = false;
 let nameSearch = ""; // normalized, "" = no search
 const selectedIds = new Set();
@@ -197,6 +202,9 @@ const els = {
   nameSearchInput: document.getElementById("name-search"),
   duplicateWarning: document.getElementById("duplicate-warning"),
   notSameButton: document.getElementById("btn-not-same"),
+  tagsSelectedButton: document.getElementById("btn-tags-selected"),
+  bulkTagsPanel: document.getElementById("bulk-tags-panel"),
+  tagManager: document.getElementById("tag-manager"),
   importReview: document.getElementById("import-review"),
   mapContainer: document.getElementById("map"),
   mapSummary: document.getElementById("map-summary"),
@@ -270,6 +278,7 @@ function refreshList() {
   syncSortControls();
   updateBulkActionButtons();
   refreshTagPicker();
+  refreshTagManager();
   refreshMap();
 }
 
@@ -543,6 +552,10 @@ function refreshTagFilter(restaurantsInView) {
 
 function updateBulkActionButtons() {
   const count = selectedIds.size;
+  // The Tags panel reflects the selection it was opened with.
+  closeBulkTags();
+  els.tagsSelectedButton.hidden = count === 0;
+  els.tagsSelectedButton.textContent = `Tags… (${count})`;
   els.deleteSelectedButton.hidden = count === 0;
   els.deleteSelectedButton.textContent = `Delete selected (${count})`;
   els.mergeSelectedButton.hidden = count < 2;
@@ -785,6 +798,89 @@ function initBulkActions() {
     message: (n) => `Mark ${n} restaurants as not duplicates`,
     doneText: (n) => `Marked ${n} restaurants as different.`,
   });
+}
+
+function closeBulkTags() {
+  els.bulkTagsPanel.hidden = true;
+  els.bulkTagsPanel.textContent = "";
+}
+
+function initBulkTags() {
+  els.tagsSelectedButton.addEventListener("click", () => {
+    if (!els.bulkTagsPanel.hidden) {
+      closeBulkTags();
+      return;
+    }
+    const ids = [...selectedIds];
+    const selected = views.filter((r) => selectedIds.has(r.id));
+    renderBulkTagEditor(els.bulkTagsPanel, allKnownTags(), selected, tagColors, {
+      onCancel: closeBulkTags,
+      onApply: async ({ add, remove }) => {
+        if (add.length === 0 && remove.length === 0) {
+          closeBulkTags();
+          return;
+        }
+        setStatus(els.statusMessage, "Saving…");
+        try {
+          await writeWithConflictRetry((d) => changeTags(d, ids, { add, remove }), {
+            message: `Change tags on ${ids.length} restaurant(s)`,
+          });
+          selectedIds.clear();
+          refreshList();
+          setStatus(els.statusMessage, `Tags updated on ${ids.length} restaurant(s).`);
+        } catch (err) {
+          setStatus(els.statusMessage, describeError(err, "Failed to save"), true);
+        }
+      },
+    });
+    els.bulkTagsPanel.hidden = false;
+  });
+}
+
+// Settings → Tags: rename or delete a tag on every restaurant.
+function refreshTagManager() {
+  const counts = new Map();
+  for (const r of doc.restaurants) for (const tag of r.tags || []) counts.set(tag, (counts.get(tag) || 0) + 1);
+  if (renamingTag && !counts.has(renamingTag)) renamingTag = null;
+  const rerender = (tag) => {
+    renamingTag = tag;
+    refreshTagManager();
+  };
+  renderTagManager(els.tagManager, counts, tagColors, {
+    renaming: renamingTag,
+    onStartRename: rerender,
+    onCancel: () => rerender(null),
+    onRename: async (from, to) => {
+      if (!to || to === from) {
+        rerender(null);
+        return;
+      }
+      if (counts.has(to) && !confirm(`"${to}" already exists. Merge "${from}" into it? Restaurants tagged "${from}" will be tagged "${to}" instead.`)) {
+        return;
+      }
+      await saveTagChange((d) => renameTag(d, from, to), "Rename tag", `Renamed "${from}" to "${to}".`, (tag) => (tag === from ? to : tag));
+    },
+    onDelete: async (tag) => {
+      if (!confirm(`Remove the tag "${tag}" from ${counts.get(tag)} restaurant(s)? The restaurants themselves stay.`)) return;
+      await saveTagChange((d) => deleteTag(d, tag), "Delete tag", `Removed the tag "${tag}".`, (t) => (t === tag ? null : t));
+    },
+  });
+}
+
+// mapTag(tag) → its new name, or null if it's gone; keeps the list's tag
+// filter and the New form's selection in step with the change.
+async function saveTagChange(mutate, message, doneText, mapTag) {
+  setStatus(els.statusMessage, "Saving…");
+  try {
+    await writeWithConflictRetry(mutate, { message });
+    renamingTag = null;
+    if (tagFilter) tagFilter = mapTag(tagFilter) || "";
+    formTags = [...new Set(formTags.map(mapTag).filter(Boolean))];
+    refreshList();
+    setStatus(els.statusMessage, doneText);
+  } catch (err) {
+    setStatus(els.statusMessage, describeError(err, "Failed to save"), true);
+  }
 }
 
 function initWishlistToggle() {
@@ -1254,6 +1350,7 @@ async function init() {
   initDetailView();
   initViewToggle();
   initBulkActions();
+  initBulkTags();
   initListFilters();
   refreshList();
   checkForAppUpdate();

@@ -222,6 +222,8 @@ extensions are easy, rather than requiring larger rewrites.
   - `duplicates.js` — place-ID extraction and name matching for duplicate
     detection (added later, Section 9)
   - `tagColors.js` — distinct per-tag colours (added later, Section 9)
+  - `tagTools.js` — Settings "Tags" list (rename/delete) and the bulk
+    "Tags…" panel (Section 15.4); the data changes are in `data.js`
   - `mapView.js` — the Map tab (Leaflet + OSM tiles, Section 15.3);
     not to be confused with `maps.js` (Google link handling)
   - `geo.js` — place search / "what's here?" lookups via Nominatim
@@ -799,6 +801,20 @@ stay quick and reliable.
 - CSV export: one row per visit with the restaurant's fields, plus one
   row per wishlist restaurant with empty visit columns
 - Bulk select / Delete / Merge / Not the same: per restaurant
+- **Bulk tags** (added 2026-10): with rows ticked, a "Tags… (n)" button
+  opens a panel listing every tag with a checkbox showing whether all
+  (checked), some (dash, "n of m") or none of the ticked restaurants have
+  it. Tapping cycles all → none → back to "some" (= leave as is, only for
+  tags that started that way); a new tag can be typed in. Apply writes
+  only the changed tags, in one commit. Changing the selection closes the
+  panel
+- **Settings → Tags** (added 2026-10): every tag with its colour and
+  restaurant count, Rename and Delete. Renaming to an existing tag merges
+  the two (confirmation first). Delete removes the tag from every
+  restaurant, never the restaurants. The list's tag filter and the New
+  form's tag selection follow the change. A renamed tag keeps its colour,
+  except when it first appeared together with another tag (same
+  `created_at`, e.g. one import) — then ties are ordered by name
 
 ### 15.5 Milestones (commit after each, ask before each push)
 

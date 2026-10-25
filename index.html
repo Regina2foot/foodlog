@@ -59,10 +59,12 @@
         <input type="checkbox" id="show-duplicates" />
         Show possible duplicates
       </label>
+      <button type="button" id="btn-tags-selected" hidden></button>
       <button type="button" id="btn-merge-selected" hidden></button>
       <button type="button" id="btn-not-same" hidden></button>
       <button type="button" id="btn-delete-selected" hidden></button>
     </div>
+    <div id="bulk-tags-panel" class="bulk-tags-panel" hidden></div>
     <div id="tag-filter" class="tag-filter" role="group" aria-label="Filter by tag" hidden></div>
     <input type="search" id="name-search" class="name-search" placeholder="Search by name" autocomplete="off" enterkeyhint="search" />
     <table id="restaurant-table">
@@ -180,6 +182,12 @@
         <button type="button" id="btn-remove-token">Remove token</button>
       </div>
     </form>
+    <h3>Tags</h3>
+    <p class="hint">
+      Rename or delete a tag on all restaurants at once. Renaming a tag to
+      one that already exists merges the two.
+    </p>
+    <div id="tag-manager"></div>
   </div>
 </section>
 
