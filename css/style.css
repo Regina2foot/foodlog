@@ -808,3 +808,65 @@ tbody tr:hover {
 .tag-manager-item input[type="text"] {
   flex: 1;
 }
+
+/* "Find locations" panel on the Map tab. The review list scrolls on its
+   own so the map stays reachable below it. */
+.locate-panel {
+  margin: 0 0 0.6rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.locate-panel .hint {
+  margin: 0.3rem 0;
+}
+
+.locate-field {
+  display: block;
+  margin: 0.5rem 0;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.locate-field input,
+.locate-field select {
+  display: block;
+  width: 100%;
+  margin-top: 0.25rem;
+  padding: 0.4rem;
+  font-size: 1rem;
+  font-weight: normal;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+}
+
+.locate-review {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  max-height: 22rem;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+}
+
+.locate-item {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.locate-choices {
+  margin: 0.3rem 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.locate-choices:empty {
+  display: none;
+}
+
+.locate-choices .map-result:last-child {
+  border-bottom: none;
+}

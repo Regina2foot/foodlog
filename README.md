@@ -42,6 +42,8 @@ token** in Settings to clear it (e.g. on a shared computer).
   already have, the app offers to add the visit there instead.
 - **Map**: your restaurants on an OpenStreetMap map; search for a place
   (or paste an address, e.g. from Google Maps) or tap the map to add one.
+  **Find locations…** looks up restaurants that have no location yet
+  (e.g. after an import) by name in an area you name, like "Berlin".
 - **List**: one row per restaurant, showing its most recent visit.
   Sortable by rating, name, or date. Tick rows to delete or merge them,
   or to add/remove tags on all of them at once (**Tags…**).
@@ -81,6 +83,7 @@ Plain HTML/CSS/JavaScript, split into ES modules under `js/`:
 - `tagTools.js` – renaming/deleting tags and the bulk tag panel
 - `mapView.js` – the Map tab (Leaflet + OpenStreetMap tiles)
 - `geo.js` – place search / lookup of a tapped spot (Nominatim)
+- `locate.js`, `locateView.js` – "Find locations" for restaurants without one
 - `app.js` – wires the modules together, event handling, entry point
 
 See `CLAUDE.md` for the full project context, data model, and the

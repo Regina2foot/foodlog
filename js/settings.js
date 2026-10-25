@@ -24,6 +24,18 @@ export function removeToken() {
   localStorage.removeItem(KEY_TOKEN);
 }
 
+// Last area typed into "Find locations" (Section 15.3) — only suggested
+// next time, never hardcoded.
+const KEY_LOCATE_AREA = "foodlog_locate_area";
+
+export function getLocateArea() {
+  return localStorage.getItem(KEY_LOCATE_AREA) || "";
+}
+
+export function saveLocateArea(area) {
+  localStorage.setItem(KEY_LOCATE_AREA, area);
+}
+
 const OWNER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/;
 const REPO_PATTERN = /^[A-Za-z0-9._-]{1,100}$/;
 

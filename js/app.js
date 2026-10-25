@@ -18,7 +18,7 @@ import {
 import { sortRestaurants } from "./sort.js";
 import { renderRestaurantList, renderListHeader, renderStarPicker, renderTagPicker, renderTagFilter, setStatus } from "./render.js";
 import { computeTagColors } from "./tagColors.js";
-import { getSettings, saveSettings, removeToken, hasCompleteSettings, parseRepoInput } from "./settings.js";
+import { getSettings, saveSettings, removeToken, hasCompleteSettings, parseRepoInput, getLocateArea, saveLocateArea } from "./settings.js";
 import { fetchDataDoc, saveDataDoc, fetchCurrentUser, GitHubApiError } from "./api.js";
 import { renderRestaurantDetail } from "./history.js";
 import { openMapsUrl } from "./maps.js";
@@ -28,10 +28,11 @@ import { extractPlaceKey, normalizeName, createMatcher, findDuplicateGroups } fr
 import { renderMap, onMapTap, visibleArea, focusRestaurant, showSearchResults, showCandidate, clearPicking } from "./mapView.js";
 import { searchWithFallbacks, lookupPosition } from "./geo.js";
 import { renderTagManager, renderBulkTagEditor } from "./tagTools.js";
+import { createLocatePanel } from "./locateView.js";
 
 // Bump on every change that gets pushed, so a device still running a
 // cached older app.js is easy to spot (shown at the bottom of Settings).
-const APP_VERSION = "2026-10-25e";
+const APP_VERSION = "2026-10-25f";
 
 // Phones have no visible error console; surface anything uncaught in the
 // status line instead of failing silently.
@@ -86,6 +87,8 @@ let detailUi = closedDetailUi();
 let mapPick = null;
 // Location chosen on the map for the New form: { lat, lng, address, osm }.
 let formLocation = null;
+// "Find locations" panel on the Map tab (created in initLocatePanel).
+let locatePanel = null;
 // Restaurant to centre on the next time the map is drawn ("Show on map").
 let pendingFocusId = null;
 
@@ -205,6 +208,7 @@ const els = {
   mapSummary: document.getElementById("map-summary"),
   mapPanel: document.querySelector('[data-tab-panel="map"]'),
   mapPickBanner: document.getElementById("map-pick-banner"),
+  locatePanel: document.getElementById("locate-panel"),
   mapPickText: document.getElementById("map-pick-text"),
   mapPickCancel: document.getElementById("btn-map-pick-cancel"),
   mapSearchForm: document.getElementById("map-search-form"),
@@ -300,6 +304,7 @@ function refreshMap() {
     : mapPick.type === "restaurant"
       ? `Choose the location of "${mapPick.name}": search below or tap the map.`
       : "Choose the location for your new restaurant: search below or tap the map.";
+  locatePanel?.refresh();
   if (pendingFocusId) {
     focusRestaurant(pendingFocusId);
     pendingFocusId = null;
@@ -325,8 +330,8 @@ function fillCandidateContent(box, place) {
   const action = el("button", { type: "button" });
   if (mapPick?.type === "restaurant") {
     action.textContent = `Use as location of "${mapPick.name}"`;
-    const id = mapPick.id;
-    action.addEventListener("click", () => applyLocationToRestaurant(id, place));
+    const { id, stayOnMap } = mapPick;
+    action.addEventListener("click", () => applyLocationToRestaurant(id, place, stayOnMap));
   } else {
     action.textContent = mapPick?.type === "form" ? "Use this location" : "Add as new restaurant";
     action.addEventListener("click", () => applyLocationToForm(place));
@@ -401,13 +406,17 @@ function locationFields(place) {
   return { lat: place.lat, lng: place.lng, address: place.address || "", osm: place.osm || null };
 }
 
-async function applyLocationToRestaurant(id, place) {
+// stayOnMap: picked from the "Find locations" list, so go back there
+// instead of to the restaurant's page.
+async function applyLocationToRestaurant(id, place, stayOnMap = false) {
   try {
     await writeWithConflictRetry((d) => updateRestaurant(d, id, locationFields(place)), { message: "Set restaurant location" });
     endMapPick();
     refreshList();
-    renderTab("list");
-    showDetail(id);
+    if (!stayOnMap) {
+      renderTab("list");
+      showDetail(id);
+    }
     setStatus(els.statusMessage, "Location saved.");
   } catch (err) {
     setStatus(els.statusMessage, describeError(err, "Failed to save location"), true);
@@ -438,7 +447,9 @@ function initMapPicking() {
   els.mapPickCancel.addEventListener("click", () => {
     const pick = mapPick;
     endMapPick();
-    if (pick?.type === "restaurant") {
+    if (pick?.stayOnMap) {
+      refreshMap();
+    } else if (pick?.type === "restaurant") {
       renderTab("list");
       showDetail(pick.id);
     } else {
@@ -453,6 +464,43 @@ function initMapPicking() {
   els.formClearLocation.addEventListener("click", () => {
     formLocation = null;
     updateFormLocationHint();
+  });
+}
+
+// Saves locations found by "Find locations" in one commit; skips any
+// restaurant that got a location meanwhile (or was deleted).
+async function saveFoundLocations(updates) {
+  await writeWithConflictRetry(
+    (d) =>
+      updates.reduce(
+        (acc, { id, place }) =>
+          acc.restaurants.some((r) => r.id === id && !hasLocation(r)) ? updateRestaurant(acc, id, locationFields(place)) : acc,
+        d
+      ),
+    { message: `Set location of ${updates.length} restaurant(s)` }
+  );
+  refreshList();
+}
+
+function initLocatePanel() {
+  locatePanel = createLocatePanel(els.locatePanel, {
+    getRestaurants: () => views,
+    getLastArea: getLocateArea,
+    saveArea: saveLocateArea,
+    isPicking: () => Boolean(mapPick),
+    saveLocations: saveFoundLocations,
+    // Pick mode for one restaurant from the review list, with its candidates
+    // shown as grey markers; tapping anywhere else on the map works too.
+    chooseOnMap: (restaurant, candidates) => {
+      mapPick = { type: "restaurant", id: restaurant.id, name: restaurant.name, stayOnMap: true };
+      els.mapSearchInput.value = restaurant.name;
+      refreshMap();
+      renderMapResults(candidates);
+      showSearchResults(candidates, choosePlace);
+      els.mapContainer.scrollIntoView({ behavior: "smooth", block: "center" });
+    },
+    setStatus: (text, isError = false) => setStatus(els.statusMessage, text, isError),
+    describeError,
   });
 }
 
@@ -1277,6 +1325,7 @@ async function init() {
   initSettingsPanel();
   initImport();
   initMapPicking();
+  initLocatePanel();
   initWishlistToggle();
   initRatingForm();
   initSortControls();

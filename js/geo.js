@@ -49,29 +49,44 @@ const round6 = (x) => Math.round(Number(x) * 1e6) / 1e6;
 // by an address search isn't the restaurant itself, and two restaurants in
 // one building must not look like the same place to duplicate detection.
 // Unnamed objects (e.g. a house number) get no name rather than "1".
+export function isVenue(place) {
+  return VENUE_CATEGORIES.has(place.category);
+}
+
 function toPlace(item) {
-  const isVenue = VENUE_CATEGORIES.has(item.category);
+  const venue = VENUE_CATEGORIES.has(item.category);
+  const bb = Array.isArray(item.boundingbox) ? item.boundingbox.map(Number) : null;
   return {
     name: item.name || "",
     address: formatAddress(item.address) || item.display_name || "",
     lat: round6(item.lat),
     lng: round6(item.lon),
-    osm: isVenue && item.osm_type && item.osm_id ? `${item.osm_type}/${item.osm_id}` : null,
+    osm: venue && item.osm_type && item.osm_id ? `${item.osm_type}/${item.osm_id}` : null,
     category: item.category || "",
     kind: item.type || "",
+    // [west, south, east, north]; Nominatim gives [south, north, west, east].
+    bbox: bb && bb.length === 4 && bb.every(Number.isFinite) ? [bb[2], bb[0], bb[3], bb[1]] : null,
   };
 }
 
-// Places matching `query`, preferring (not limited to) `viewbox`
-// = [west, south, east, north].
-export async function searchPlaces(query, viewbox = null) {
+// Places matching `query`, preferring `viewbox` = [west, south, east,
+// north] — or, with bounded: true, only places inside it.
+export async function searchPlaces(query, viewbox = null, { bounded = false } = {}) {
   const params = new URLSearchParams({ q: query, format: "jsonv2", addressdetails: "1", limit: "8" });
   if (viewbox) {
     params.set("viewbox", viewbox.map((x) => x.toFixed(4)).join(","));
-    params.set("bounded", "0");
+    params.set("bounded", bounded ? "1" : "0");
   }
   const data = await rateLimitedJson(`${BASE}/search?${params}`);
   return (Array.isArray(data) ? data : []).map(toPlace);
+}
+
+// The area a free-text place ("Berlin", "Tokyo", "Toscana, Italy") covers,
+// for searches limited to it: { name, viewbox } or null if not found.
+export async function findArea(text) {
+  const places = await searchPlaces(text);
+  const area = places.find((p) => p.bbox);
+  return area ? { name: area.address || area.name || text, viewbox: area.bbox } : null;
 }
 
 // Search text as pasted, made friendlier for Nominatim. Google addresses

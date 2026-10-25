@@ -228,6 +228,8 @@ extensions are easy, rather than requiring larger rewrites.
     not to be confused with `maps.js` (Google link handling)
   - `geo.js` — place search / "what's here?" lookups via Nominatim
     (Section 15.3), rate-limited and cached
+  - `locate.js`, `locateView.js` — "Find locations" for restaurants
+    without one: matching logic (no DOM) and the Map-tab panel
   - `googleImport.js`, `settings.js` — Google Takeout import parsing;
     local settings storage + data-repo input parsing (added later)
   - `app.js` — wires the modules together, event handling, entry point
@@ -788,15 +790,34 @@ stay quick and reliable.
   mode for the form: "Use this location") and a way to clear it
 - Leaving the Map tab ends pick mode; the phone back button behaves as
   for any other tab (Section 9)
-- **"Locate restaurants without a location"** helper (mainly right after
-  an import, since Google exports carry no coordinates): asks **where
-  these places are** (free text, e.g. "Berlin" or "Tokyo", per run; the
-  last value is suggested, stored in `localStorage`, never hardcoded),
-  then works through them one by one at ≤1 Nominatim request per second
-  (policy). A confident match (exactly one result in that area whose
-  name matches) is accepted automatically; everything else goes to a
-  review list (pick a result / tap on the map / skip). Saves in batches,
-  not one commit per place. Can be stopped and resumed
+- **"Find locations"** (built 2026-10; mainly after an import, since
+  Google exports carry no coordinates): a button on the Map tab under
+  the summary line, "Find locations for N restaurant(s)…". Setup asks
+  **where these places are** (free text, e.g. "Berlin" or "Tokyo"; the
+  last value is suggested, `localStorage` key `foodlog_locate_area`,
+  never hardcoded) and **which restaurants** (all without a location, or
+  one tag — e.g. one imported list). The area is looked up once
+  (`findArea`, its bounding box); then each restaurant is searched by
+  name **only inside that box** (Nominatim `bounded=1`), ≤1 request per
+  second via `geo.js`, sorted by name. Name versions tried in turn
+  (`nameVariants`): as stored; the part before " - ", "(", "," etc.;
+  for 3+ words, without the last word ("Café Einstein Stammhaus" →
+  "Café Einstein"). **Confident match** = exactly one *venue* result
+  (amenity/shop/tourism/leisure) whose name matches (`namesMatch` from
+  duplicate detection) → saved automatically, in batches of 20 (one
+  commit each, plus the rest at the end/stop), never overwriting a
+  location set meanwhile. Everything else goes to the **review list**
+  ("n possible matches" or "not found in …"): tap a candidate (saved
+  right away), "Choose on map" (pick mode with the candidates as grey
+  markers; returns to the Map tab, not the restaurant page), or "Skip".
+  Progress line "Checking i of n: name" and counters; **Stop** any time.
+  "Run again" continues with what's left (located ones drop out; skipped
+  ones only come back with a different area; ones still in the review
+  list aren't searched twice). A failed search (offline, service
+  refusing) stops the run with a message instead of failing every
+  remaining restaurant. Checked live in Berlin (2026-10): a unique
+  restaurant was matched, a chain with four branches went to review,
+  memorials/streets with the same name were ignored
 - Duplicate detection gains a location signal: similar name *and* within
   ~60 m is a strong match; same `osm` reference = same place
 - "Open in Google Maps" is always available: uses `google_maps_url` if
@@ -852,7 +873,8 @@ stay quick and reliable.
        `vendor/leaflet/`, checksums verified — see its README)
 4. [x] Setting locations (link coordinates, Nominatim search, tap on
        map) + adding new restaurants from the map
-5. [ ] "Locate restaurants without a location" helper
+5. [x] "Locate restaurants without a location" helper ("Find
+       locations", Map tab)
 6. [ ] Fold the final state back into Sections 8/9/11/13 and retire the
        "legacy" notes
 
