@@ -1,7 +1,7 @@
 # Foodlog
 
-A small web app to rate restaurants (0–5 stars, comment, price level),
-sortable by rating, with Google Maps links. Runs entirely in the browser —
+A small web app to rate restaurants (0–5 stars, comment), sortable by
+rating, with a map (OpenStreetMap). Runs entirely in the browser —
 no server, no build step, no framework.
 
 ## How it works
@@ -37,13 +37,16 @@ token** in Settings to clear it (e.g. on a shared computer).
 
 ## Using the app
 
-- **New rating**: paste a Google Maps link, fill in the form, and submit.
-  Pasting the same Google Maps link again adds another visit to the same
-  restaurant instead of creating a duplicate entry.
+- **New**: enter the name, optionally paste the address (e.g. copied from
+  Google Maps) and tap **Find** to put it on the map, then rate it or
+  mark it as "haven't been yet". If it looks like a restaurant you
+  already have, the app offers to add the visit there instead.
+- **Map**: your restaurants on an OpenStreetMap map; search for a place
+  or tap the map to add one.
 - **List**: one row per restaurant, showing its most recent visit.
   Sortable by rating, name, or date.
 - Click a row to open the **restaurant detail view**: full visit history,
-  a rating/price-over-time chart, and an "Open in Google Maps" button.
+  a rating-over-time chart, and an "Open in Google Maps" button.
   Edit or delete individual visits from there.
 - **Refresh**: reloads the latest data from the data repo.
 - **Export CSV**: downloads the currently loaded data as a CSV file, one
@@ -69,7 +72,7 @@ Plain HTML/CSS/JavaScript, split into ES modules under `js/`:
 - `sort.js` – sorting logic
 - `csv.js` – CSV export
 - `maps.js` – Google Maps link handling and validation
-- `history.js` – restaurant detail view, visit history, rating/price chart
+- `history.js` – restaurant detail view, visit history, rating chart
 - `settings.js` – local (localStorage) runtime settings
 - `googleImport.js` – Google Takeout CSV import
 - `duplicates.js` – duplicate detection (same Google place / similar name)

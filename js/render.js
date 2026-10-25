@@ -2,7 +2,6 @@
 // via textContent, never innerHTML, to prevent XSS (see CLAUDE.md Section 4.1).
 
 const STAR_SYMBOL = "★";
-const PRICE_SYMBOL = "€";
 
 // Always renders all 5 stars: `rating` of them filled (bright yellow), the
 // rest empty (gray outline) — so a real 0-star rating is visibly distinct
@@ -30,11 +29,6 @@ export function buildStarsDisplay(rating) {
   return container;
 }
 
-export function formatPrice(level) {
-  const n = Math.max(0, Math.min(3, Math.round(level ?? 0)));
-  return PRICE_SYMBOL.repeat(n) || "–";
-}
-
 // Builds an interactive 0–5 picker inside `container` and calls onChange(value)
 // whenever the user picks a new value. Reads the initial value from
 // container.dataset.value.
@@ -51,25 +45,6 @@ export function renderStarPicker(container, onChange) {
       const next = Number(container.dataset.value) === i ? 0 : i;
       container.dataset.value = String(next);
       renderStarPicker(container, onChange);
-      onChange(next);
-    });
-    container.appendChild(span);
-  }
-}
-
-export function renderPricePicker(container, onChange) {
-  container.textContent = "";
-  const current = Number(container.dataset.value || 0);
-  for (let i = 1; i <= 3; i++) {
-    const span = document.createElement("span");
-    span.className = "symbol" + (i <= current ? " active" : "");
-    span.textContent = PRICE_SYMBOL;
-    span.setAttribute("role", "radio");
-    span.setAttribute("aria-checked", String(i <= current));
-    span.addEventListener("click", () => {
-      const next = Number(container.dataset.value) === i ? 0 : i;
-      container.dataset.value = String(next);
-      renderPricePicker(container, onChange);
       onChange(next);
     });
     container.appendChild(span);
@@ -152,7 +127,6 @@ const VISITED_COLUMNS = [
   { label: "", className: "col-select" },
   { label: "Name", className: "col-name" },
   { label: "Rating", className: "col-rating" },
-  { label: "Price", className: "col-price" },
   { label: "Tags", className: "col-tags" },
   { label: "Last edit", className: "col-date" },
   { label: "Comment", className: "col-comment" },
@@ -249,7 +223,6 @@ export function renderRestaurantList(
     } else {
       row.append(
         cell("col-rating", buildStarsDisplay(latest ? latest.rating : null)),
-        cell("col-price", latest ? formatPrice(latest.price_level) : ""),
         cell("col-tags", buildTagDots(tags, tagColors)),
         cell("col-date", formatDate(latest?.visited_at)),
         cell("col-comment", latest?.comment || restaurant.note || "")

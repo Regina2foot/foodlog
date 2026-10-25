@@ -13,12 +13,12 @@ import {
   DATA_FILE,
 } from "./data.js";
 import { sortRestaurants } from "./sort.js";
-import { renderRestaurantList, renderListHeader, renderStarPicker, renderPricePicker, renderTagPicker, renderTagFilter, setStatus } from "./render.js";
+import { renderRestaurantList, renderListHeader, renderStarPicker, renderTagPicker, renderTagFilter, setStatus } from "./render.js";
 import { computeTagColors } from "./tagColors.js";
 import { getSettings, saveSettings, removeToken, hasCompleteSettings, parseRepoInput } from "./settings.js";
 import { fetchDataDoc, saveDataDoc, fetchCurrentUser, GitHubApiError } from "./api.js";
 import { renderRestaurantDetail } from "./history.js";
-import { openMapsUrl, extractNameFromMapsUrl, extractCoordsFromMapsUrl } from "./maps.js";
+import { openMapsUrl } from "./maps.js";
 import { restaurantsToCsv, downloadCsv } from "./csv.js";
 import { decodeImportFile, parseGoogleMapsExport, buildImport, applyImport } from "./googleImport.js";
 import { extractPlaceKey, normalizeName, createMatcher, findDuplicateGroups } from "./duplicates.js";
@@ -27,7 +27,7 @@ import { searchPlaces, lookupPosition } from "./geo.js";
 
 // Bump on every change that gets pushed, so a device still running a
 // cached older app.js is easy to spot (shown at the bottom of Settings).
-const APP_VERSION = "2026-10-18e";
+const APP_VERSION = "2026-10-25a";
 
 // Phones have no visible error console; surface anything uncaught in the
 // status line instead of failing silently.
@@ -79,8 +79,10 @@ let detailUi = closedDetailUi();
 // null = just browsing; { type: "restaurant", id, name } = for an existing
 // restaurant; { type: "form" } = for the New form.
 let mapPick = null;
-// Location chosen on the map for the New form: { lat, lng, address, osm }.
+// Location for the New form, chosen on the map or found from the typed
+// address: { lat, lng, address, osm }.
 let formLocation = null;
+let formLocationFromAddress = false;
 // Restaurant to centre on the next time the map is drawn ("Show on map").
 let pendingFocusId = null;
 
@@ -162,12 +164,13 @@ const els = {
   tokenInput: document.getElementById("setting-token"),
   removeTokenButton: document.getElementById("btn-remove-token"),
   ratingForm: document.getElementById("rating-form"),
-  mapsUrlInput: document.getElementById("field-maps-url"),
+  addressInput: document.getElementById("field-address"),
+  findAddressButton: document.getElementById("btn-find-address"),
+  addressResults: document.getElementById("address-results"),
   locationHint: document.getElementById("field-location-hint"),
   nameInput: document.getElementById("field-name"),
   noteInput: document.getElementById("field-note"),
   ratingPicker: document.getElementById("field-rating"),
-  pricePicker: document.getElementById("field-price"),
   commentInput: document.getElementById("field-comment"),
   tagsPicker: document.getElementById("field-tags"),
   visitedAtInput: document.getElementById("field-visited-at"),
@@ -404,23 +407,82 @@ async function applyLocationToRestaurant(id, place) {
 }
 
 function applyLocationToForm(place) {
-  formLocation = locationFields(place);
+  setFormLocation(locationFields(place), false);
   if (!els.nameInput.value.trim() && place.name) els.nameInput.value = place.name;
+  if (!els.addressInput.value.trim() && place.address) els.addressInput.value = place.address;
   endMapPick();
-  updateFormLocationHint();
   showTab("new");
 }
 
-// The New form's location line: a place chosen on the map wins over
-// coordinates found in a pasted Google link.
+// fromAddress: the location was looked up from the typed address, so
+// editing the address afterwards makes it stale (and clears it).
+function setFormLocation(location, fromAddress) {
+  formLocation = location;
+  formLocationFromAddress = Boolean(location && fromAddress);
+  els.addressResults.hidden = true;
+  els.addressResults.textContent = "";
+  updateFormLocationHint();
+}
+
 function updateFormLocationHint() {
-  const linkCoords = extractCoordsFromMapsUrl(els.mapsUrlInput.value.trim());
   els.locationHint.textContent = formLocation
     ? `📍 ${formLocation.address || "Location chosen on the map"}`
-    : linkCoords
-      ? "📍 Location found in the link — it will be saved with the restaurant."
-      : "No location yet.";
+    : "No location yet.";
   els.formClearLocation.hidden = !formLocation;
+}
+
+// An address search finds the address, not necessarily the restaurant
+// itself, so no OSM reference is kept (two places in one building must not
+// look like the same place to duplicate detection).
+function useFoundAddress(place) {
+  setFormLocation({ ...locationFields(place), osm: null }, true);
+  setStatus(els.statusMessage, "Address found — check the location under the address field.");
+}
+
+async function findAddress() {
+  const query = els.addressInput.value.trim();
+  if (!query) return;
+  els.addressInput.blur();
+  setStatus(els.statusMessage, "Looking up the address…");
+  try {
+    const places = await searchPlaces(query, visibleArea());
+    if (places.length === 1) {
+      useFoundAddress(places[0]);
+      return;
+    }
+    els.addressResults.textContent = "";
+    els.addressResults.hidden = places.length === 0;
+    for (const place of places) {
+      const button = el("button", { type: "button", className: "map-result" }, [
+        el("strong", { textContent: place.name || "(no name)" }),
+        el("span", { className: "hint", textContent: place.address }),
+      ]);
+      button.addEventListener("click", () => useFoundAddress(place));
+      els.addressResults.appendChild(el("li", {}, [button]));
+    }
+    setStatus(
+      els.statusMessage,
+      places.length
+        ? `${places.length} matches — pick the right one under the address field.`
+        : 'Address not found. Try a shorter version (street, number, city), or use "Set location on map".'
+    );
+  } catch (err) {
+    setStatus(els.statusMessage, describeError(err, "Address lookup failed"), true);
+  }
+}
+
+function initAddressLookup() {
+  els.findAddressButton.addEventListener("click", findAddress);
+  // Enter in the address field looks it up instead of submitting the form.
+  els.addressInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      findAddress();
+    }
+  });
+  els.addressInput.addEventListener("input", () => {
+    if (formLocationFromAddress) setFormLocation(null, false);
+  });
 }
 
 function initMapPicking() {
@@ -444,10 +506,7 @@ function initMapPicking() {
     els.mapSearchInput.value = els.nameInput.value.trim();
     showTab("map");
   });
-  els.formClearLocation.addEventListener("click", () => {
-    formLocation = null;
-    updateFormLocationHint();
-  });
+  els.formClearLocation.addEventListener("click", () => setFormLocation(null, false));
 }
 
 function allKnownTags() {
@@ -539,11 +598,8 @@ function refreshDetail() {
         if (hasLocation(restaurant)) pendingFocusId = id;
         showTab("map");
       },
-      onSaveRestaurant: (changes) => {
-        // A newly pasted long Google link can supply a missing location.
-        const coords = hasLocation(restaurant) ? null : extractCoordsFromMapsUrl(changes.google_maps_url);
-        saveDetailChange((d) => updateRestaurant(d, id, { ...changes, ...(coords || {}) }), "Edit restaurant", "Restaurant updated.");
-      },
+      onSaveRestaurant: (changes) =>
+        saveDetailChange((d) => updateRestaurant(d, id, changes), "Edit restaurant", "Restaurant updated."),
       onDeleteRestaurant: async () => {
         try {
           await writeWithConflictRetry((d) => deleteRestaurants(d, [id]), { message: "Delete restaurant" });
@@ -928,20 +984,8 @@ function initImport() {
   });
 }
 
-function initMapsLinkHelpers() {
-  els.mapsUrlInput.addEventListener("input", () => {
-    const url = els.mapsUrlInput.value.trim();
-    if (els.nameInput.value.trim() === "") {
-      const extracted = extractNameFromMapsUrl(url);
-      if (extracted) els.nameInput.value = extracted;
-    }
-    updateFormLocationHint();
-  });
-}
-
 function initPickers() {
   renderStarPicker(els.ratingPicker, () => {});
-  renderPricePicker(els.pricePicker, () => {});
 }
 
 function initSettingsPanel() {
@@ -1000,7 +1044,6 @@ function updateSettingsStatus() {
 // warning's buttons), so edits made while the warning is shown aren't lost.
 // Returns { restaurant, visit } — visit is null for "haven't been yet".
 function buildFromForm() {
-  const url = els.mapsUrlInput.value.trim();
   const restaurant = {
     id: generateId(),
     name: els.nameInput.value.trim(),
@@ -1008,16 +1051,16 @@ function buildFromForm() {
     note: els.noteInput.value.trim(),
     ...stamp(),
   };
-  if (url) restaurant.google_maps_url = url;
-  Object.assign(restaurant, extractCoordsFromMapsUrl(url) || {});
   if (formLocation) Object.assign(restaurant, formLocation);
+  // The address as typed/pasted wins over the looked-up one: it's the
+  // version the user knows (e.g. Google's).
+  const typedAddress = els.addressInput.value.trim();
+  if (typedAddress) restaurant.address = typedAddress;
   if (els.wishlistCheckbox.checked) return { restaurant, visit: null };
-  const price = Number(els.pricePicker.dataset.value || 0);
   const visit = {
     id: generateId(),
     restaurant_id: restaurant.id,
     rating: Number(els.ratingPicker.dataset.value || 0),
-    price_level: price > 0 ? price : null,
     comment: els.commentInput.value.trim(),
     visited_at: els.visitedAtInput.value || new Date().toISOString().slice(0, 10),
     ...stamp(),
@@ -1084,10 +1127,8 @@ async function saveFromForm({ decision, sameAs, differentFrom }) {
     });
     els.ratingForm.reset();
     els.ratingPicker.dataset.value = "0";
-    els.pricePicker.dataset.value = "0";
     els.visitedFieldsContainer.hidden = false;
-    formLocation = null;
-    updateFormLocationHint();
+    setFormLocation(null, false);
     formTags = [];
     initPickers();
     refreshList();
@@ -1204,7 +1245,7 @@ async function init() {
   initPickers();
   initSettingsPanel();
   initImport();
-  initMapsLinkHelpers();
+  initAddressLookup();
   initMapPicking();
   initWishlistToggle();
   initRatingForm();

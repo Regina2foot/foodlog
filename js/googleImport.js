@@ -205,7 +205,6 @@ export function buildImport(entries, { createdBy, isKnownPlace, generateId, bulk
           id: generateId(),
           restaurant_id: restaurant.id,
           rating: entry.rating,
-          price_level: null,
           comment: entry.comment || "",
           visited_at: createdAt.slice(0, 10),
           created_by: createdBy,

@@ -141,8 +141,7 @@ form select {
   margin-bottom: 0.25rem;
 }
 
-.star-picker,
-.price-picker {
+.star-picker {
   display: inline-block;
   font-size: 1.4rem;
   cursor: pointer;
@@ -153,16 +152,8 @@ form select {
   color: var(--star-empty);
 }
 
-.price-picker .symbol {
-  opacity: 0.3;
-}
-
 .star-picker .symbol.active {
   color: var(--star-filled);
-}
-
-.price-picker .symbol.active {
-  opacity: 1;
 }
 
 .stars-display {
@@ -295,10 +286,6 @@ th, td {
   width: 4.75rem;
 }
 
-#restaurant-table .col-price {
-  width: 2.75rem;
-}
-
 #restaurant-table .col-tags {
   width: 3.75rem;
 }
@@ -313,7 +300,6 @@ th, td {
 }
 
 #restaurant-table td.col-rating,
-#restaurant-table td.col-price,
 #restaurant-table td.col-tags,
 #restaurant-table td.col-date {
   white-space: nowrap;
@@ -340,7 +326,6 @@ th, td {
 
   #restaurant-table .col-select { width: 1.5rem; }
   #restaurant-table .col-rating { width: 4.1rem; }
-  #restaurant-table .col-price { width: 2.5rem; }
   #restaurant-table .col-tags { width: 3.4rem; }
   #restaurant-table .col-date { width: 3.9rem; }
 
@@ -734,6 +719,15 @@ tbody tr:hover {
 
 .form-location .hint {
   margin: 0 0 0.35rem;
+}
+
+/* New form: address input + Find button on one line under its label. */
+form label.address-label {
+  margin-bottom: 0.25rem;
+}
+
+#rating-form .map-search input {
+  margin-top: 0;
 }
 
 .location-row {

@@ -1,9 +1,9 @@
-// Restaurant detail view: full visit history, a rating/price-over-time
+// Restaurant detail view: full visit history, a rating-over-time
 // chart (hand-rolled SVG, see CLAUDE.md Section 13), and the
 // "Open in Google Maps" action. All user-supplied text is set via
 // textContent, never innerHTML (see CLAUDE.md Section 4.1).
 
-import { buildStarsDisplay, buildTagDot, formatPrice, formatDate, renderStarPicker, renderPricePicker, renderTagPicker } from "./render.js";
+import { buildStarsDisplay, buildTagDot, formatDate, renderStarPicker, renderTagPicker } from "./render.js";
 import { googleMapsLinkFor } from "./maps.js";
 import { hasLocation } from "./data.js";
 
@@ -24,18 +24,15 @@ function svgEl(tag, attrs = {}) {
   return node;
 }
 
-// Two stacked plots over the restaurant's rated visits (oldest left):
-// rating on a 0–5 axis, price on a €–€€€ axis, dates along the bottom.
-// Wishlist entries have no rating/price and are left out. Returns null if
-// there's nothing to plot.
+// The restaurant's ratings over time (oldest left): rating on a 0–5 axis,
+// dates along the bottom. Returns null if there's nothing to plot.
 const CHART = {
   width: 320,
   padLeft: 34,
   padRight: 14,
   rating: { top: 22, height: 80 },
-  price: { top: 132, height: 50 },
-  dateLabelY: 200,
-  height: 208,
+  dateLabelY: 120,
+  height: 128,
 };
 
 export function buildHistoryChart(visits) {
@@ -48,7 +45,7 @@ export function buildHistoryChart(visits) {
     viewBox: `0 0 ${CHART.width} ${CHART.height}`,
     width: "100%",
     role: "img",
-    "aria-label": "Rating and price level over time",
+    "aria-label": "Rating over time",
     class: "history-chart",
   });
 
@@ -106,15 +103,6 @@ export function buildHistoryChart(visits) {
     rated.map((v) => v.rating),
     "#d4820a"
   );
-  plot(
-    CHART.price,
-    "Price",
-    [1, 2, 3].map((v) => ({ value: v, label: "€".repeat(v) })),
-    1,
-    3,
-    rated.map((v) => v.price_level),
-    "#3b7dd8"
-  );
 
   // Date labels under the x-axis; thinned out so they never overlap.
   const every = Math.ceil(rated.length / 5);
@@ -126,7 +114,7 @@ export function buildHistoryChart(visits) {
   return svg;
 }
 
-// One visit as a two-line card: date, stars, price and actions on top;
+// One visit as a two-line card: date, stars and actions on top;
 // the comment underneath (if any).
 function renderVisitCard(visit, { onEdit, onDelete }) {
   const card = el("div", { className: "visit-card" });
@@ -144,7 +132,6 @@ function renderVisitCard(visit, { onEdit, onDelete }) {
     el("div", { className: "visit-line" }, [
       el("span", { className: "visit-date", textContent: formatDate(visit.visited_at) || "—" }),
       buildStarsDisplay(visit.rating ?? 0),
-      el("span", { className: "visit-price", textContent: formatPrice(visit.price_level) }),
       el("span", { className: "visit-actions" }, [editButton, deleteButton]),
     ])
   );
@@ -163,26 +150,21 @@ function labeled(labelText, control) {
 }
 
 // Form for a visit: a new one (visit = null) or editing an existing one.
-// onSave(fields) gets { rating, price_level, comment, visited_at }.
+// onSave(fields) gets { rating, comment, visited_at }.
 function renderVisitForm(visit, { onSave, onCancel }) {
   const card = el("div", { className: "visit-card visit-edit" });
 
   const ratingPicker = el("span", { className: "star-picker" });
   ratingPicker.dataset.value = String(visit?.rating ?? 0);
-  const pricePicker = el("span", { className: "price-picker" });
-  pricePicker.dataset.value = String(visit?.price_level ?? 0);
   renderStarPicker(ratingPicker, () => {});
-  renderPricePicker(pricePicker, () => {});
 
   const commentInput = el("textarea", { rows: 2, value: visit?.comment || "", placeholder: "How was it?" });
   const dateInput = el("input", { type: "date", value: visit?.visited_at || new Date().toISOString().slice(0, 10) });
 
   const saveButton = el("button", { type: "button", textContent: visit ? "Save" : "Add visit" });
   saveButton.addEventListener("click", () => {
-    const price = Number(pricePicker.dataset.value || 0);
     onSave({
       rating: Number(ratingPicker.dataset.value || 0),
-      price_level: price > 0 ? price : null,
       comment: commentInput.value.trim(),
       visited_at: dateInput.value || new Date().toISOString().slice(0, 10),
     });
@@ -193,7 +175,6 @@ function renderVisitForm(visit, { onSave, onCancel }) {
   card.append(
     el("div", { className: "edit-fields" }, [
       labeled("Rating", ratingPicker),
-      labeled("Price", pricePicker),
       labeled("Comment", commentInput),
       labeled("Visit date", dateInput),
     ]),
@@ -202,16 +183,11 @@ function renderVisitForm(visit, { onSave, onCancel }) {
   return card;
 }
 
-// Edit form for the restaurant itself (not a visit): name, Google link,
-// tags, note, plus "Delete restaurant".
+// Edit form for the restaurant itself (not a visit): name, tags, note,
+// plus "Delete restaurant". The location is changed via "Set location".
 function renderRestaurantForm(restaurant, allTags, tagColors, { onSave, onCancel, onDelete }) {
   const card = el("div", { className: "visit-card visit-edit" });
   const nameInput = el("input", { type: "text", value: restaurant.name || "" });
-  const linkInput = el("input", {
-    type: "text",
-    value: restaurant.google_maps_url || "",
-    placeholder: "https://maps.app.goo.gl/...",
-  });
   const noteInput = el("textarea", { rows: 2, value: restaurant.note || "", placeholder: "e.g. who recommended it" });
 
   let selectedTags = [...(restaurant.tags || [])];
@@ -238,7 +214,6 @@ function renderRestaurantForm(restaurant, allTags, tagColors, { onSave, onCancel
     }
     onSave({
       name,
-      google_maps_url: linkInput.value.trim(),
       note: noteInput.value.trim(),
       tags: selectedTags,
     });
@@ -256,7 +231,6 @@ function renderRestaurantForm(restaurant, allTags, tagColors, { onSave, onCancel
   card.append(
     el("div", { className: "edit-fields" }, [
       labeled("Name", nameInput),
-      labeled("Google Maps link (optional)", linkInput),
       labeled("Tags", tagsContainer),
       labeled("Note", noteInput),
     ]),

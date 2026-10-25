@@ -217,7 +217,7 @@ extensions are easy, rather than requiring larger rewrites.
   - `csv.js` — CSV export
   - `maps.js` — Google Maps link handling and validation
   - `history.js` — grouping visits per restaurant, rendering the
-    restaurant detail view and the rating/price-over-time chart (plain
+    restaurant detail view and the rating-over-time chart (plain
     SVG, no charting library)
   - `duplicates.js` — place-ID extraction and name matching for duplicate
     detection (added later, Section 9)
@@ -584,7 +584,8 @@ pick (Section 2.1).
 
 - Stars are whole numbers (0–5), no half stars, and deliberately a single
   overall rating with no sub-dimensions
-- Price level is a whole number 1–3 (shown as €/€€/€€€)
+- No price level (removed 2026-10): price is part of the single overall
+  star rating, and anything worth saying about it goes in the comment
 - No framework, plain vanilla JS, split into ES modules (Section 6)
 - A single JSON array as the "database", no separate file per entry
 - Repeat visits to the same restaurant are grouped by an exact match on
@@ -592,7 +593,7 @@ pick (Section 2.1).
   pasted with a different link, it shows up as a separate restaurant
   until merged — duplicate detection (Section 9) flags these but never
   merges automatically
-- The rating/price history chart is a hand-rolled SVG, not an external
+- The rating history chart is a hand-rolled SVG, not an external
   charting library, to avoid adding a new dependency (Section 4.1) — can
   revisit if that turns out to be too limiting
 - Importing existing Google Maps data is a permanent in-app feature (CSV
@@ -671,7 +672,6 @@ extra (people are used to it).
       "id": "a1b2c3d4",
       "restaurant_id": "r1a2b3c4",
       "rating": 4,
-      "price_level": 2,
       "comment": "Great pasta, loud on weekends",
       "visited_at": "2026-09-20",
       "created_by": "github-username",
@@ -684,13 +684,16 @@ extra (people are used to it).
 - Restaurant fields: only `id` and `name` are required. `lat`/`lng`
   (numbers) are null/absent until the place is located. `address` and
   `osm` (OpenStreetMap reference, e.g. `node/123`) come from a Nominatim
-  search result. `google_maps_url` is optional, stored exactly as pasted.
+  search result (`address` can also be typed/pasted on the New form).
+  `google_maps_url` only comes from the Google import (no form field for
+  it anymore), stored exactly as it came.
   `tags` describe the restaurant (cuisine, occasion, source list such as
   "Gregors recommendations"). `note` is free text about the restaurant
   itself (e.g. who recommended it), as opposed to a visit's comment.
   `not_same_as` lists restaurant ids the user said are different places
 - Visit fields: `rating` 0–5 (whole number, required on a visit),
-  `price_level` 1–3 or null, `comment`, `visited_at` (YYYY-MM-DD)
+  `comment`, `visited_at` (YYYY-MM-DD). No `price_level` (removed
+  2026-10, see Section 13); old values in the file are simply ignored
 - **Wishlist = a restaurant with no visits.** No `status` field anymore.
   Rated = has at least one visit
 - **Merge** = move all visits of the other restaurant(s) onto one, union
@@ -735,17 +738,25 @@ stay quick and reliable.
   restaurant name). Picking a result or tapping shows a red candidate
   marker with a popup whose button depends on the mode below
 - **Setting a location** on a restaurant:
-  - automatically from a pasted Google link if it contains coordinates
-    (`!3d…!4d…` preferred, else `@lat,lng`) — offline, no service
-    involved; applied when saving the New form
+  - New form: an **Address** field (e.g. copied from Google Maps) with a
+    **Find** button → Nominatim search for the address. One match is
+    taken; several are listed to pick from; none → hint to shorten the
+    address or use the map. Shown under the field so a wrong match is
+    caught before saving. Enter in the field also runs Find (doesn't
+    submit). No `osm` reference is kept from an address match (it finds
+    the address/building, not necessarily the restaurant). Editing the
+    address afterwards clears the found location. The typed address is
+    what gets saved as `address`
+  - The Google import still takes coordinates from long Google links
+    when present (`!3d…!4d…` preferred, else `@lat,lng`) — offline
   - detail view → "Set location" / "Change location" switches to the Map
     tab in *pick mode* (banner "Choose the location of …" with Cancel);
     search or tap, then "Use as location of …" saves lat/lng (and
     address/`osm` when known) and returns to the restaurant. "Show on
     map" centres the map on its marker
 - **Adding from the map**: outside pick mode the popup button is "Add as
-  new restaurant" → the New tab opens pre-filled with name (if known)
-  and the location. The New form also has "Set location on map" (pick
+  new restaurant" → the New tab opens pre-filled with name (if known),
+  address (if the field is empty) and the location. The New form also has "Set location on map" (pick
   mode for the form: "Use this location") and a way to clear it
 - Leaving the Map tab ends pick mode; the phone back button behaves as
   for any other tab (Section 9)
@@ -767,10 +778,13 @@ stay quick and reliable.
 ### 15.4 What changes in existing features
 
 - List: Rated/Wishlist by visit count; rows show the latest visit's
-  rating/price/date; tags and tag colours come from the restaurant
+  rating/date; tags and tag colours come from the restaurant
 - Sorting is per view: Rated by rating / name / date (latest visit);
   Wishlist by name / date added (`created_at`), default name A→Z
-- New form: creates a restaurant; rating/price/comment/date fields create
+- New form: name, address (+ Find), location, tags, note; no Google
+  link field (removed 2026-10 — "Open in Google Maps" searches by name +
+  address, or coordinates, when there's no stored link). Creates a
+  restaurant; rating/comment/date fields create
   its first visit unless "Haven't been yet" is ticked. Adding another
   visit to an existing restaurant happens in its detail view ("Add
   visit"), or via "Add as another visit" in the duplicate warning

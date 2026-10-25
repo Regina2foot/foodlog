@@ -102,17 +102,15 @@
     <h2>New restaurant</h2>
     <form id="rating-form">
       <label>
-        Google Maps link (optional)
-        <input type="text" id="field-maps-url" placeholder="https://maps.app.goo.gl/..." />
-      </label>
-      <label>
         Name
         <input type="text" id="field-name" required placeholder="Restaurant name" />
       </label>
-      <p class="hint">
-        Auto-filled from a full Google Maps link when possible. Short share
-        links (maps.app.goo.gl/...) don't carry a name, so type it yourself.
-      </p>
+      <label for="field-address" class="address-label">Address (optional)</label>
+      <div class="map-search">
+        <input type="text" id="field-address" placeholder="e.g. copied from Google Maps" autocomplete="off" enterkeyhint="search" />
+        <button type="button" id="btn-find-address">Find</button>
+      </div>
+      <ul id="address-results" class="map-results" hidden></ul>
       <div class="form-location">
         <p id="field-location-hint" class="hint">No location yet.</p>
         <div class="form-actions">
@@ -136,10 +134,6 @@
         <label>
           Rating
           <span id="field-rating" class="star-picker" data-value="0" role="radiogroup" aria-label="Rating"></span>
-        </label>
-        <label>
-          Price level
-          <span id="field-price" class="price-picker" data-value="0" role="radiogroup" aria-label="Price level"></span>
         </label>
         <label>
           Comment on this visit

@@ -12,7 +12,6 @@ const COLUMNS = [
   ["note", (r) => r.note],
   ["visited_at", (r, v) => v?.visited_at],
   ["rating", (r, v) => v?.rating],
-  ["price_level", (r, v) => v?.price_level],
   ["comment", (r, v) => v?.comment],
   ["created_by", (r, v) => (v || r).created_by],
 ];
