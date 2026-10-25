@@ -811,13 +811,30 @@ stay quick and reliable.
   one tag — e.g. one imported list). The area is looked up once
   (`findArea`, its bounding box); then each restaurant is searched by
   name **only inside that box** (Nominatim `bounded=1`), ≤1 request per
-  second via `geo.js`, sorted by name. Name versions tried in turn
-  (`nameVariants`): as stored; the part before " - ", "(", "," etc.;
-  for 3+ words, without the last word ("Café Einstein Stammhaus" →
-  "Café Einstein"). **Confident match** = exactly one *venue* result
-  (amenity/shop/tourism/leisure) whose name matches (`namesMatch` from
-  duplicate detection) → saved automatically, in batches of 20 (one
-  commit each, plus the rest at the end/stop), never overwriting a
+  second via `geo.js`, sorted by name. Searches tried in turn
+  (`searchPlan` in `locate.js`): the name as stored; the part before
+  " - ", "(", "," etc.; without generic words ("Melt Cafe Creperie" →
+  "Melt Creperie"); compound words split at the area's name or a common
+  food word ("Berlinburger" → "Berlin burger"); then dropping words from
+  the end one at a time ("Burgermeister Schlesisches Tor" → "…
+  Schlesisches" → "Burgermeister"). **Careful by design — no guessing**
+  (revised 2026-10 after real misses): a result only counts if it's a
+  *venue* (amenity/shop/tourism/leisure) whose name agrees with the full
+  name (`namesAgree`: equal ignoring spaces, or `namesMatch` from
+  duplicate detection). Exactly one such venue → accepted. Several (a
+  chain) → never guessed. If words were dropped, they're searched as a
+  place in the area: if found, only a match *there* counts (within 800 m
+  of a station/street/building, or inside a district's bounds), with one
+  extra search limited to that spot because a chain can have more
+  branches than one search returns; if the words aren't a place
+  ("Stammhaus"), a match is accepted only if it's the only one in the
+  area and the name didn't already turn out to be a chain. Checked live in
+  Berlin: Melt Cafe Creperie → "MELT Crêperie", Berlinburger
+  International → "Berlin Burger International", Burgermeister
+  Schlesisches Tor → the branch at the station (8+ branches in Berlin).
+  Unfound restaurants take more searches (up to ~8, i.e. several
+  seconds each). Accepted matches are saved automatically, in batches of
+  20 (one commit each, plus the rest at the end/stop), never overwriting a
   location set meanwhile. Everything else goes to the **review list**
   ("n possible matches" or "not found in …"): tap a candidate (saved
   right away), "Choose on map" (pick mode with the candidates as grey

@@ -261,7 +261,7 @@ export function createLocatePanel(container, deps) {
     });
     render();
 
-    const { done, error } = await locateAll(todo, area.viewbox, {
+    const { done, error } = await locateAll(todo, { viewbox: area.viewbox, areaText }, {
       shouldStop: () => state.stopRequested,
       onProgress: (index, restaurant) => {
         state.progress = { index, total: todo.length, name: restaurant.name };
