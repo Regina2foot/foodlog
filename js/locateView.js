@@ -6,6 +6,7 @@
 import { locateAll } from "./locate.js";
 import { findArea } from "./geo.js";
 import { hasLocation } from "./data.js";
+import { formatDate } from "./render.js";
 
 // Confident matches are written in batches of this size (one commit each),
 // plus whatever is left when the run ends or is stopped.
@@ -30,8 +31,9 @@ const byName = (a, b) => a.name.localeCompare(b.name);
 // deps: getRestaurants() → restaurant views; getLastArea() / saveArea(text);
 // isPicking() → true while the map is in pick mode (panel hidden then);
 // saveLocations([{ id, place }]) → Promise (writes + refreshes the app);
-// chooseOnMap(restaurant, candidates); setStatus(text, isError);
-// describeError(err, fallback).
+// chooseOnMap(restaurant, candidates); openRestaurant(id);
+// markNotOnOsm(id) → Promise (saves today's date as not_on_osm_at);
+// setStatus(text, isError); describeError(err, fallback).
 export function createLocatePanel(container, deps) {
   const state = {
     phase: "idle", // idle | setup | running | done
@@ -184,6 +186,13 @@ export function createLocatePanel(container, deps) {
       const { restaurant, candidates } = item;
       const li = el("li", { className: "locate-item" });
       li.appendChild(el("strong", { textContent: restaurant.name }));
+      // Marked earlier as missing from OpenStreetMap; still searched each
+      // run, since it may have been added since.
+      if (restaurant.not_on_osm_at) {
+        li.appendChild(
+          el("span", { className: "locate-flag", textContent: ` Not on OSM last time (${formatDate(restaurant.not_on_osm_at)})` })
+        );
+      }
       li.appendChild(
         el("span", {
           className: "hint",
@@ -207,13 +216,31 @@ export function createLocatePanel(container, deps) {
       }
       li.appendChild(choices);
       li.appendChild(
-        el("div", { className: "form-actions" }, [
-          button("Choose on map", () => deps.chooseOnMap(restaurant, candidates)),
-          button("Skip", () => {
-            state.skipped.add(restaurant.id);
-            resolve(item);
-            render();
-          }),
+        el("div", { className: "form-actions locate-actions" }, [
+          button("Choose on map", () => deps.chooseOnMap(restaurant, candidates), "small-btn"),
+          // e.g. to delete or archive a place that can't be found anymore.
+          button("Open entry", () => deps.openRestaurant(restaurant.id), "small-btn"),
+          button(
+            "Not on OSM",
+            () => {
+              state.skipped.add(restaurant.id);
+              resolve(item);
+              render();
+              saving = saving
+                .then(() => deps.markNotOnOsm(restaurant.id))
+                .catch((err) => deps.setStatus(deps.describeError(err, "Failed to save"), true));
+            },
+            "small-btn"
+          ),
+          button(
+            "Skip",
+            () => {
+              state.skipped.add(restaurant.id);
+              resolve(item);
+              render();
+            },
+            "small-btn"
+          ),
         ])
       );
       reviewList.appendChild(li);

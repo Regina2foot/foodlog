@@ -28,26 +28,16 @@ export function sortRestaurants(restaurants, field, dir = "desc") {
   }
 }
 
-// Map tab filter (CLAUDE.md Section 15.3). `rating`: "all" | "wishlist" |
-// "0" | "1-3" | "4-5" | "5", judged by the latest visit like the list;
-// wishlist places only pass "all" and "wishlist". `tags`: a Set — empty =
+// Map tab filter (CLAUDE.md Section 15.3). `ratings`: a Set of
+// "wishlist" and/or star values "0"–"5" (judged by the latest visit, like
+// the list), any combination; empty = everything. `tags`: a Set — empty =
 // any; otherwise the restaurant needs at least one of them.
-export const MAP_RATING_FILTERS = [
-  ["all", "All"],
-  ["wishlist", "Wishlist only"],
-  ["0", "0★ (no recommendation)"],
-  ["1-3", "1–3★"],
-  ["4-5", "4–5★"],
-  ["5", "5★ only"],
-];
+export const STAR_VALUES = ["0", "1", "2", "3", "4", "5"];
 
-const RATING_RANGES = { 0: [0, 0], "1-3": [1, 3], "4-5": [4, 5], 5: [5, 5] };
-
-export function matchesMapFilter(restaurant, { rating = "all", tags = new Set() } = {}) {
+export function matchesMapFilter(restaurant, { ratings = new Set(), tags = new Set() } = {}) {
   if (tags.size > 0 && !(restaurant.tags || []).some((t) => tags.has(t))) return false;
-  if (rating === "all") return true;
-  if (rating === "wishlist") return restaurant.isWishlist;
-  const range = RATING_RANGES[rating];
+  if (ratings.size === 0) return true;
+  if (restaurant.isWishlist) return ratings.has("wishlist");
   const value = restaurant.latest?.rating;
-  return Boolean(range) && Number.isFinite(value) && value >= range[0] && value <= range[1];
+  return Number.isFinite(value) && ratings.has(String(value));
 }

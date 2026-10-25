@@ -304,7 +304,11 @@ export function renderRestaurantDetail(container, restaurant, callbacks, ui, all
     const locationRow = el("div", { className: "location-row" }, [
       el("span", {
         className: "hint",
-        textContent: located ? `📍 ${restaurant.address || "Location set"}` : "No location yet",
+        textContent: located
+          ? `📍 ${restaurant.address || "Location set"}`
+          : restaurant.not_on_osm_at
+            ? `No location yet · not on OpenStreetMap (checked ${formatDate(restaurant.not_on_osm_at)})`
+            : "No location yet",
       }),
     ]);
     if (located && !restaurant.isArchived) {
@@ -324,6 +328,16 @@ export function renderRestaurantDetail(container, restaurant, callbacks, ui, all
     const editButton = el("button", { type: "button", textContent: "Edit restaurant" });
     editButton.addEventListener("click", callbacks.onEditRestaurant);
     container.appendChild(el("div", { className: "form-actions detail-actions" }, [mapsButton, editButton]));
+    // Which Google Maps place the button opens: a saved link (e.g. from the
+    // Google import) wins over the address, so say so.
+    if (googleLink && googleLink === restaurant.google_maps_url) {
+      container.appendChild(
+        el("p", {
+          className: "hint maps-link-note",
+          textContent: "ⓘ Google Maps opens the link saved with this restaurant (from the import), not its address.",
+        })
+      );
+    }
   }
 
   if (restaurant.visits.length > 0) {

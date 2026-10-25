@@ -16,7 +16,7 @@ import {
   hasLocation,
   DATA_FILE,
 } from "./data.js";
-import { sortRestaurants, matchesMapFilter, MAP_RATING_FILTERS } from "./sort.js";
+import { sortRestaurants, matchesMapFilter, STAR_VALUES } from "./sort.js";
 import { renderRestaurantList, renderListHeader, renderStarPicker, renderTagPicker, renderTagFilter, setStatus, renderTagChipsMulti } from "./render.js";
 import { computeTagColors } from "./tagColors.js";
 import {
@@ -44,7 +44,7 @@ import { createRestorePanel } from "./restoreView.js";
 
 // Bump on every change that gets pushed, so a device still running a
 // cached older app.js is easy to spot (shown at the bottom of Settings).
-const APP_VERSION = "2026-10-25i";
+const APP_VERSION = "2026-10-25j";
 
 // Phones have no visible error console; surface anything uncaught in the
 // status line instead of failing silently.
@@ -106,7 +106,7 @@ let mapPick = null;
 // Location chosen on the map for the New form: { lat, lng, address, osm }.
 let formLocation = null;
 // Map tab filter (sort.js matchesMapFilter); kept while the app is open.
-let mapFilter = { rating: "all", tags: new Set() };
+let mapFilter = { ratings: new Set(), tags: new Set() };
 // "Find locations" panel on the Map tab (created in initLocatePanel).
 let locatePanel = null;
 // Restaurant to centre on the next time the map is drawn ("Show on map").
@@ -322,7 +322,7 @@ function refreshMap() {
   const active = views.filter((r) => !r.isArchived);
   // "Show on map" for a restaurant the filter hides: clear the filter.
   const focus = pendingFocusId && active.find((r) => r.id === pendingFocusId);
-  if (focus && !matchesMapFilter(focus, mapFilter)) mapFilter = { rating: "all", tags: new Set() };
+  if (focus && !matchesMapFilter(focus, mapFilter)) mapFilter = { ratings: new Set(), tags: new Set() };
   renderMapFilters(active);
 
   const matching = active.filter((r) => matchesMapFilter(r, mapFilter));
@@ -334,7 +334,7 @@ function refreshMap() {
     },
   });
   const total = active.length;
-  const filtered = mapFilter.rating !== "all" || mapFilter.tags.size > 0;
+  const filtered = mapFilter.ratings.size > 0 || mapFilter.tags.size > 0;
   els.mapSummary.textContent =
     total === 0
       ? "No restaurants yet."
@@ -357,17 +357,36 @@ function refreshMap() {
   }
 }
 
-// Rating choice + tag chips above the map; only tags that occur in
-// non-archived restaurants are offered.
+// Rating chips + tag chips above the map; only tags that occur in
+// non-archived restaurants are offered. Rating chips combine freely:
+// Wishlist and each star value toggle on/off; "Rated" = all star values;
+// "All" = no rating filter.
 function renderMapFilters(active) {
-  if (els.mapRatingFilter.options.length === 0) {
-    for (const [value, label] of MAP_RATING_FILTERS) els.mapRatingFilter.appendChild(el("option", { value, textContent: label }));
-    els.mapRatingFilter.addEventListener("change", () => {
-      mapFilter = { ...mapFilter, rating: els.mapRatingFilter.value };
-      refreshMap();
-    });
-  }
-  els.mapRatingFilter.value = mapFilter.rating;
+  const ratings = mapFilter.ratings;
+  const setRatings = (next) => {
+    mapFilter = { ...mapFilter, ratings: next };
+    refreshMap();
+  };
+  const chip = (label, isActive, onClick) => {
+    const button = el("button", { type: "button", className: "filter-chip" + (isActive ? " active" : ""), textContent: label });
+    button.setAttribute("aria-pressed", String(isActive));
+    button.addEventListener("click", onClick);
+    return button;
+  };
+  const toggle = (value) => () => {
+    const next = new Set(ratings);
+    if (next.has(value)) next.delete(value);
+    else next.add(value);
+    setRatings(next);
+  };
+  const allRated = STAR_VALUES.every((v) => ratings.has(v)) && !ratings.has("wishlist");
+  els.mapRatingFilter.textContent = "";
+  els.mapRatingFilter.append(
+    chip("All", ratings.size === 0, () => setRatings(new Set())),
+    chip("Rated", allRated, () => setRatings(new Set(STAR_VALUES))),
+    chip("Wishlist", ratings.has("wishlist"), toggle("wishlist")),
+    ...STAR_VALUES.map((v) => chip(`${v}★`, ratings.has(v), toggle(v)))
+  );
   const tags = [...new Set(active.flatMap((r) => r.tags))].sort((a, b) => a.localeCompare(b));
   // Drop selected tags that no longer exist (renamed/deleted).
   const kept = new Set([...mapFilter.tags].filter((t) => tags.includes(t)));
@@ -472,8 +491,9 @@ function endMapPick() {
   els.mapResults.textContent = "";
 }
 
+// A found location also clears an earlier "not on OpenStreetMap" mark.
 function locationFields(place) {
-  return { lat: place.lat, lng: place.lng, address: place.address || "", osm: place.osm || null };
+  return { lat: place.lat, lng: place.lng, address: place.address || "", osm: place.osm || null, not_on_osm_at: null };
 }
 
 // stayOnMap: picked from the "Find locations" list, so go back there
@@ -568,6 +588,17 @@ function initLocatePanel() {
       renderMapResults(candidates);
       showSearchResults(candidates, choosePlace);
       els.mapContainer.scrollIntoView({ behavior: "smooth", block: "center" });
+    },
+    openRestaurant: (id) => {
+      renderTab("list");
+      showDetail(id);
+    },
+    markNotOnOsm: async (id) => {
+      await writeWithConflictRetry(
+        (d) => updateRestaurant(d, id, { not_on_osm_at: new Date().toISOString().slice(0, 10) }),
+        { message: "Mark restaurant as not on OpenStreetMap" }
+      );
+      refreshList();
     },
     setStatus: (text, isError = false) => setStatus(els.statusMessage, text, isError),
     describeError,

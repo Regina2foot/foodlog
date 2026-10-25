@@ -674,6 +674,7 @@ extra (people are used to it).
       "note": "Recommended by a friend",
       "not_same_as": ["r9z8y7x6"],
       "archived_at": null,
+      "not_on_osm_at": null,
       "created_by": "github-username",
       "created_at": "2026-09-20T18:32:00Z"
     }
@@ -703,7 +704,10 @@ extra (people are used to it).
   itself (e.g. who recommended it), as opposed to a visit's comment.
   `not_same_as` lists restaurant ids the user said are different places.
   `archived_at` (YYYY-MM-DD, added 2026-10): set when the restaurant is
-  archived as closed; null/absent = not archived
+  archived as closed; null/absent = not archived. `not_on_osm_at`
+  (YYYY-MM-DD, added 2026-10): the user marked it as not findable on
+  OpenStreetMap ("Not on OSM" in Find locations); cleared whenever a
+  location is set
 - Visit fields: `rating` 0–5 (whole number, required on a visit),
   `comment`, `visited_at` (YYYY-MM-DD). No `price_level` (removed
   2026-10, see Section 13); old values in the file are simply ignored
@@ -738,11 +742,12 @@ stay quick and reliable.
   restaurant in the List tab. Zooms to fit all markers the first time;
   after that the view stays where the user left it. A line above the map
   says how many restaurants are shown / have a location
-- **Map filters** (above the map, kept while the app is open): rating —
-  All / Wishlist only / 0★ (no recommendation) / 1–3★ / 4–5★ / 5★ only,
-  judged by the latest visit like the list (`matchesMapFilter` in
-  `sort.js`); tag chips in one horizontally scrolling row, several can be
-  on at once (a restaurant shows if it has any of them; "All tags" clears).
+- **Map filters** (above the map, kept while the app is open), two
+  horizontally scrolling chip rows (`matchesMapFilter` in `sort.js`):
+  rating chips that combine freely — Wishlist, 0★, 1★ … 5★ each on/off;
+  "Rated" = all six star values, "All" = no rating filter; judged by the
+  latest visit like the list. Tag chips: several can be on at once (a
+  restaurant shows if it has any of them; "All tags" clears).
   "Show on map" for a restaurant the filter hides clears the filter
 - **Search bar on the Map tab** (Nominatim, `geo.js`): results appear as
   a list under the bar and as grey markers. Searches are **biased toward
@@ -838,7 +843,12 @@ stay quick and reliable.
   location set meanwhile. Everything else goes to the **review list**
   ("n possible matches" or "not found in …"): tap a candidate (saved
   right away), "Choose on map" (pick mode with the candidates as grey
-  markers; returns to the Map tab, not the restaurant page), or "Skip".
+  markers; returns to the Map tab, not the restaurant page), "Open entry"
+  (its page, e.g. to delete or archive a place that can't be found),
+  "Not on OSM" (saves `not_on_osm_at` = today; it's still searched in
+  later runs, since it may have been added to OSM, and then shows "Not
+  on OSM last time (date)"; the restaurant page shows it too), or
+  "Skip".
   Progress line "Checking i of n: name" and counters; **Stop** any time.
   "Run again" continues with what's left (located ones drop out; skipped
   ones only come back with a different area; ones still in the review
@@ -850,9 +860,12 @@ stay quick and reliable.
 - Duplicate detection gains a location signal: similar name *and* within
   ~60 m is a strong match; same `osm` reference = same place
 - "Open in Google Maps" is always available: uses `google_maps_url` if
-  present, otherwise a Google Maps search for name + address, else the
-  coordinates, else just the name — opened like any link, no Google
-  service is called by the app itself
+  present (kept from the Google import — no form field for it), otherwise
+  a Google Maps search for name + address, else the coordinates, else
+  just the name — opened like any link, no Google service is called by
+  the app itself. When the saved link is used, a small note under the
+  button says so ("opens the link saved with this restaurant, not its
+  address")
 
 ### 15.4 What changes in existing features
 

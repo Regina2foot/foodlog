@@ -690,26 +690,10 @@ tbody tr:hover {
   margin: 0 0 0.5rem;
 }
 
-.map-rating-filter {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.9rem;
-}
-
-.map-rating-filter select {
-  padding: 0.25rem;
-  font-size: 0.95rem;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: transparent;
-  color: inherit;
-}
-
 .map-filters .tag-filter {
   flex-wrap: nowrap;
   overflow-x: auto;
-  margin-top: 0.4rem;
+  margin-top: 0.3rem;
   padding-bottom: 0.2rem;
 }
 
@@ -982,4 +966,19 @@ tbody tr:hover {
   flex-direction: column;
   gap: 0.25rem;
   margin: 0.4rem 0;
+}
+
+.locate-flag {
+  font-size: 0.8rem;
+  font-style: italic;
+  opacity: 0.75;
+}
+
+.locate-actions {
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.maps-link-note {
+  margin: 0.3rem 0 0;
 }
