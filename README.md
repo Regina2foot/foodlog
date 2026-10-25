@@ -37,12 +37,11 @@ token** in Settings to clear it (e.g. on a shared computer).
 
 ## Using the app
 
-- **New**: enter the name, optionally paste the address (e.g. copied from
-  Google Maps) and tap **Find** to put it on the map, then rate it or
-  mark it as "haven't been yet". If it looks like a restaurant you
+- **New**: enter the name, optionally put it on the map ("Set location on
+  map"), then rate it or mark it as "haven't been yet". If it looks like a restaurant you
   already have, the app offers to add the visit there instead.
 - **Map**: your restaurants on an OpenStreetMap map; search for a place
-  or tap the map to add one.
+  (or paste an address, e.g. from Google Maps) or tap the map to add one.
 - **List**: one row per restaurant, showing its most recent visit.
   Sortable by rating, name, or date. Tick rows to delete or merge them,
   or to add/remove tags on all of them at once (**Tags…**).

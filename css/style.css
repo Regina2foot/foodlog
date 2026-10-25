@@ -156,6 +156,14 @@ form select {
   color: var(--star-filled);
 }
 
+/* "3 – Very good" under the stars; plain text, not part of the tap targets. */
+.star-picker .rating-meaning {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: normal;
+  cursor: default;
+}
+
 .stars-display {
   display: inline-block;
   letter-spacing: 1px;
@@ -719,15 +727,6 @@ tbody tr:hover {
 
 .form-location .hint {
   margin: 0 0 0.35rem;
-}
-
-/* New form: address input + Find button on one line under its label. */
-form label.address-label {
-  margin-bottom: 0.25rem;
-}
-
-#rating-form .map-search input {
-  margin-top: 0;
 }
 
 .location-row {

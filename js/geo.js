@@ -39,15 +39,24 @@ export function formatAddress(address) {
   return [streetLine, place, address.country].filter(Boolean).join(", ");
 }
 
+// Categories that are actual venues (restaurants, bars, cafés, shops…), as
+// opposed to buildings, streets or areas.
+const VENUE_CATEGORIES = new Set(["amenity", "shop", "tourism", "leisure"]);
+
 const round6 = (x) => Math.round(Number(x) * 1e6) / 1e6;
 
+// Only a venue keeps its OSM reference: a building or address point found
+// by an address search isn't the restaurant itself, and two restaurants in
+// one building must not look like the same place to duplicate detection.
+// Unnamed objects (e.g. a house number) get no name rather than "1".
 function toPlace(item) {
+  const isVenue = VENUE_CATEGORIES.has(item.category);
   return {
-    name: item.name || (item.display_name || "").split(",")[0] || "",
+    name: item.name || "",
     address: formatAddress(item.address) || item.display_name || "",
     lat: round6(item.lat),
     lng: round6(item.lon),
-    osm: item.osm_type && item.osm_id ? `${item.osm_type}/${item.osm_id}` : null,
+    osm: isVenue && item.osm_type && item.osm_id ? `${item.osm_type}/${item.osm_id}` : null,
     category: item.category || "",
     kind: item.type || "",
   };
@@ -65,33 +74,97 @@ export async function searchPlaces(query, viewbox = null) {
   return (Array.isArray(data) ? data : []).map(toPlace);
 }
 
-// Simpler versions of an address to try when the full text isn't found,
-// most specific first. Google adds things Nominatim doesn't know, e.g.
-// "Weichselstraße 44, 12045 Berlin-Bezirk Neukölln": first drop such
-// district additions ("12045 Berlin"), then keep only street + postal code.
-const DISTRICT_SUFFIX = /[\s-]+(Bezirk|Ortsteil|Stadtteil|Stadtbezirk|district|borough)\b.*$/i;
+// Search text as pasted, made friendlier for Nominatim. Google addresses
+// carry things Nominatim doesn't know, so when the full text finds nothing,
+// simpler versions are tried in turn (most specific first):
+//   1. the text as pasted (minus links, Plus Codes, "〒", line breaks)
+//   2. cleaned: district additions dropped ("12045 Berlin-Bezirk Neukölln"
+//      → "12045 Berlin"), floor/suite parts dropped, house-number ranges
+//      cut to the first number ("21-24" → "21"), Italian-style province
+//      codes after the city dropped ("00184 Roma RM" → "00184 Roma")
+//      and a house number written as its own part joined to its street
+//      ("Piazza del Colosseo, 1" → "Piazza del Colosseo 1")
+//   3. without a leading name/building part (a first part with no digits)
+//   4. street + postal code
+//   5. street + city
+// Only for addresses (text with a number in it); every version keeps a
+// number: never just a city, which would put the restaurant in the middle
+// of town instead of reporting "not found".
+const PLUS_CODE = /\b[23456789CFGHJMPQRVWX]{4,8}\+[23456789CFGHJMPQRVWX]{2,3}\b/gi;
+const DISTRICT_SUFFIX = /[\s-]+(Bezirk|Ortsteil|Stadtteil|Stadtbezirk|Gemeinde|district|borough|arrondissement)\b.*$/i;
+const UNIT_PART = /^(suite|ste\.?|unit|apt\.?|apartment|floor|fl\.?|etage|stock|\d+\.?\s*(og|etage|stock|floor)|eg|og|ug)\b/i;
+// Second number at most 3 digits, so postal codes like "100-8111" stay.
+const HOUSE_RANGE = /([A-Za-zÀ-ÿ.]\s+\d+)[a-z]?\s*[-–]\s*\d{1,3}[a-z]?\b/;
+const PROVINCE_CODE = /^(.*\p{L}.*?)\s+[A-Z]{2}$/u;
+const POSTCODE = /\b(\d{4}\s?[A-Z]{2}|\d{5}|\d{4}|\d{3}-\d{4})\b/;
 
-export function addressVariants(text) {
-  const parts = text.split(",").map((p) => p.trim()).filter(Boolean);
-  const variants = [parts.join(", "), parts.map((p) => p.replace(DISTRICT_SUFFIX, "")).join(", ")];
-  const postcode = text.match(/\b\d{4,5}\b/);
-  if (parts.length > 1 && postcode && !parts[0].includes(postcode[0])) variants.push(`${parts[0]}, ${postcode[0]}`);
-  return [...new Set(variants.filter(Boolean))];
+function cleanPart(part) {
+  return part.replace(DISTRICT_SUFFIX, "").replace(HOUSE_RANGE, "$1").replace(PROVINCE_CODE, "$1").trim();
 }
 
-// Looks up an address, falling back to simpler versions of it (one
-// request each, still rate-limited) until something is found.
-export async function searchAddress(text, viewbox = null) {
-  for (const variant of addressVariants(text)) {
-    const places = await searchPlaces(variant, viewbox);
-    if (places.length > 0) return places;
+export function searchVariants(text) {
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l && !/^https?:\/\//i.test(l));
+  const joined = lines.join(", ");
+  const base = joined.replace(PLUS_CODE, "").replace(/〒\s*/g, "").replace(/\s+/g, " ");
+  const parts = base.split(",").map((p) => p.trim()).filter(Boolean);
+  const variants = [parts.join(", ")];
+  // A place name (no digits) is only ever searched as typed.
+  const isAddress = /\d/.test(joined);
+  if (isAddress) {
+    const cleaned = [];
+    for (const part of parts.filter((p) => !UNIT_PART.test(p)).map(cleanPart).filter(Boolean)) {
+      if (/^\d+[a-z]?$/i.test(part) && cleaned.length > 0 && !/\d/.test(cleaned[cleaned.length - 1])) {
+        cleaned[cleaned.length - 1] += ` ${part}`;
+      } else {
+        cleaned.push(part);
+      }
+    }
+    variants.push(cleaned.join(", "));
+    const withoutName = !/\d/.test(cleaned[0]) && cleaned.length >= 3 ? cleaned.slice(1) : cleaned;
+    variants.push(withoutName.join(", "));
+    // Street = first part with a number and a word; the postal code is
+    // looked for only in the parts after it.
+    const streetIndex = withoutName.findIndex((p) => /\d/.test(p) && /\p{L}{3,}/u.test(p));
+    const street = withoutName[streetIndex];
+    const postcodePart = streetIndex >= 0 ? withoutName.slice(streetIndex + 1).find((p) => POSTCODE.test(p)) : null;
+    if (street && postcodePart) {
+      const postcode = postcodePart.match(POSTCODE)[0];
+      variants.push(`${street}, ${postcode}`);
+      const city = postcodePart.replace(POSTCODE, "").trim();
+      if (/\p{L}/u.test(city)) variants.push(`${street}, ${city}`);
+    }
   }
-  return [];
+  return [...new Set(variants.filter((v) => v && (!isAddress || /\d/.test(v))))];
 }
 
-// Categories that are actual venues (restaurants, bars, cafés, shops…), as
-// opposed to buildings, streets or areas.
-const VENUE_CATEGORIES = new Set(["amenity", "shop", "tourism", "leisure"]);
+// Results that are only a street, town or area, not a building or venue.
+// For an address with a house number that means the number wasn't matched
+// (e.g. a whole 3 km street), so better versions are tried first.
+// ("place/house" is an exact address point, so it doesn't count.)
+const isVaguePlace = (p) =>
+  p.category === "highway" || ((p.category === "place" || p.category === "boundary") && p.kind !== "house");
+const isVague = (places) => places.every(isVaguePlace);
+
+// Searches for `text` (a place name or a pasted address), falling back to
+// simpler versions of it (one request each, still rate-limited) until
+// something precise is found. Returns { places, vague }: vague = only a
+// street/area was found (the first such answer), so the position should be
+// checked. A plain name search (no digits) takes whatever it finds first.
+export async function searchWithFallbacks(text, viewbox = null) {
+  const isAddress = /\d/.test(text);
+  let fallback = null;
+  for (const variant of searchVariants(text)) {
+    const places = await searchPlaces(variant, viewbox);
+    if (places.length === 0) continue;
+    if (!isAddress || !isVague(places)) return { places, vague: false };
+    fallback = fallback || places;
+  }
+  return { places: fallback || [], vague: Boolean(fallback) };
+}
+
 
 // What's at a tapped position. If the nearest object is a venue, it's taken
 // as the place (its name, OSM reference and exact coordinates). Otherwise

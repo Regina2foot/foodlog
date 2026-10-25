@@ -584,6 +584,11 @@ pick (Section 2.1).
 
 ## 13. Assumptions made (adjust here directly if needed)
 
+- Meaning of the stars (shown under the star picker, `RATING_LABELS` in
+  `render.js`, decided 2026-10): 0 no recommendation (everything between
+  not good and disgusting), 1 okay, 2 good, 3 very good, 4 excellent,
+  5 flawless. Lines up with the Google import's N/10 conversion (≤5 → 0,
+  6 → 1 … 10 → 5)
 - Stars are whole numbers (0–5), no half stars, and deliberately a single
   overall rating with no sub-dimensions
 - No price level (removed 2026-10): price is part of the single overall
@@ -686,7 +691,7 @@ extra (people are used to it).
 - Restaurant fields: only `id` and `name` are required. `lat`/`lng`
   (numbers) are null/absent until the place is located. `address` and
   `osm` (OpenStreetMap reference, e.g. `node/123`) come from a Nominatim
-  search result (`address` can also be typed/pasted on the New form).
+  search result or map tap.
   `google_maps_url` only comes from the Google import (no form field for
   it anymore), stored exactly as it came.
   `tags` describe the restaurant (cuisine, occasion, source list such as
@@ -732,6 +737,34 @@ stay quick and reliable.
   into the search text). No fixed search-area setting. Searching only on
   submit (never while typing), ≤1 request per second, identical requests
   answered from memory
+- **Pasted addresses in the search bar** (e.g. copied from Google Maps;
+  replaced the New form's address field + Find button, 2026-10). For
+  text containing a number, simpler versions are tried in turn when the
+  full text finds nothing precise (`searchVariants` /
+  `searchWithFallbacks` in `geo.js`, one rate-limited request each):
+  1. as pasted, minus link lines, Plus Codes, "〒" and line breaks
+     (so Google's share text "Name / address / link" works too)
+  2. cleaned: district additions dropped ("12045 Berlin-Bezirk
+     Neukölln" → "12045 Berlin"), floor/suite parts dropped, house
+     number ranges cut ("21-24" → "21"; postal codes like "100-8111"
+     untouched), Italian-style province codes dropped ("Roma RM" →
+     "Roma"), a lone house number joined to its street ("Piazza del
+     Colosseo, 1" → "Piazza del Colosseo 1")
+  3. without a leading name/building part (first part without digits)
+  4. street + postal code, 5. street + city
+  Never a city alone (every version keeps a number), so a bad address
+  says "not found" instead of landing in the town centre. A result
+  that's only a street/area (`highway`, or `place`/`boundary` other than
+  `house`) counts as vague: later versions are tried first, and if
+  nothing better turns up it's shown with "check the position". Place
+  names (no digits) are only ever searched as typed. Checked live
+  against landmark addresses in Berlin, Rome, Amsterdam, Washington and
+  Tokyo (2026-10). A Plus Code alone can't be looked up (would need
+  decoding) — tap the map instead
+- Search results keep a name and `osm` reference only if they're a venue
+  (amenity/shop/tourism/leisure) — a building or address point isn't the
+  restaurant, and two restaurants in one building must not look like the
+  same place to duplicate detection
 - **Tapping the map** (not a marker) runs a reverse lookup of that spot.
   Only if the nearest object is a venue (OSM category
   amenity/shop/tourism/leisure) are its name, `osm` reference and exact
@@ -740,19 +773,8 @@ stay quick and reliable.
   restaurant name). Picking a result or tapping shows a red candidate
   marker with a popup whose button depends on the mode below
 - **Setting a location** on a restaurant:
-  - New form: an **Address** field (e.g. copied from Google Maps) with a
-    **Find** button → Nominatim search for the address. If the full
-    text isn't found, simpler versions are tried in turn (`addressVariants`
-    in `geo.js`): without district additions Google uses (e.g.
-    "12045 Berlin-Bezirk Neukölln" → "12045 Berlin"), then only street +
-    postal code — one rate-limited request each. One match is
-    taken; several are listed to pick from; none → hint to shorten the
-    address or use the map. Shown under the field so a wrong match is
-    caught before saving. Enter in the field also runs Find (doesn't
-    submit). No `osm` reference is kept from an address match (it finds
-    the address/building, not necessarily the restaurant). Editing the
-    address afterwards clears the found location. The typed address is
-    what gets saved as `address`
+  - New form: "Set location on map" (pick mode, search pre-filled with
+    the name; paste an address there instead if needed)
   - The Google import still takes coordinates from long Google links
     when present (`!3d…!4d…` preferred, else `@lat,lng`) — offline
   - detail view → "Set location" / "Change location" switches to the Map
@@ -761,8 +783,8 @@ stay quick and reliable.
     address/`osm` when known) and returns to the restaurant. "Show on
     map" centres the map on its marker
 - **Adding from the map**: outside pick mode the popup button is "Add as
-  new restaurant" → the New tab opens pre-filled with name (if known),
-  address (if the field is empty) and the location. The New form also has "Set location on map" (pick
+  new restaurant" → the New tab opens pre-filled with name (if known)
+  and the location (incl. Nominatim's address). The New form also has "Set location on map" (pick
   mode for the form: "Use this location") and a way to clear it
 - Leaving the Map tab ends pick mode; the phone back button behaves as
   for any other tab (Section 9)
@@ -788,7 +810,7 @@ stay quick and reliable.
   rating/date; tags and tag colours come from the restaurant
 - Sorting is per view: Rated by rating / name / date (latest visit);
   Wishlist by name / date added (`created_at`), default name A→Z
-- New form: name, address (+ Find), location, tags, note; no Google
+- New form: name, location ("Set location on map"), tags, note; no Google
   link field (removed 2026-10 — "Open in Google Maps" searches by name +
   address, or coordinates, when there's no stored link). Creates a
   restaurant; rating/comment/date fields create

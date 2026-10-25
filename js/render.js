@@ -29,9 +29,20 @@ export function buildStarsDisplay(rating) {
   return container;
 }
 
+// What each star count means (one overall rating, CLAUDE.md Section 13).
+// Matches the Google import's N/10 conversion: ≤5/10 → 0, 6/10 → 1 … 10/10 → 5.
+export const RATING_LABELS = [
+  "No recommendation (everything between not good and disgusting)",
+  "Okay",
+  "Good",
+  "Very good",
+  "Excellent",
+  "Flawless",
+];
+
 // Builds an interactive 0–5 picker inside `container` and calls onChange(value)
 // whenever the user picks a new value. Reads the initial value from
-// container.dataset.value.
+// container.dataset.value. Shows what the current value means underneath.
 export function renderStarPicker(container, onChange) {
   container.textContent = "";
   const current = Number(container.dataset.value || 0);
@@ -49,6 +60,10 @@ export function renderStarPicker(container, onChange) {
     });
     container.appendChild(span);
   }
+  const meaning = document.createElement("span");
+  meaning.className = "rating-meaning";
+  meaning.textContent = `${current} – ${RATING_LABELS[current] || ""}`;
+  container.appendChild(meaning);
 }
 
 // Checkbox list of known tags plus a text input to add a brand-new one.

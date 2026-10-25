@@ -86,7 +86,7 @@
     <button type="button" id="btn-map-pick-cancel">Cancel</button>
   </div>
   <form id="map-search-form" class="map-search" role="search">
-    <input type="search" id="map-search-input" placeholder="Search a place, e.g. Toscana Rome" autocomplete="off" enterkeyhint="search" />
+    <input type="search" id="map-search-input" placeholder="Search a place or paste an address" autocomplete="off" enterkeyhint="search" />
     <button type="submit">Search</button>
   </form>
   <ul id="map-results" class="map-results" hidden></ul>
@@ -107,12 +107,6 @@
         Name
         <input type="text" id="field-name" required placeholder="Restaurant name" />
       </label>
-      <label for="field-address" class="address-label">Address (optional)</label>
-      <div class="map-search">
-        <input type="text" id="field-address" placeholder="e.g. copied from Google Maps" autocomplete="off" enterkeyhint="search" />
-        <button type="button" id="btn-find-address">Find</button>
-      </div>
-      <ul id="address-results" class="map-results" hidden></ul>
       <div class="form-location">
         <p id="field-location-hint" class="hint">No location yet.</p>
         <div class="form-actions">

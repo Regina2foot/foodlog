@@ -26,12 +26,12 @@ import { restaurantsToCsv, downloadCsv } from "./csv.js";
 import { decodeImportFile, parseGoogleMapsExport, buildImport, applyImport } from "./googleImport.js";
 import { extractPlaceKey, normalizeName, createMatcher, findDuplicateGroups } from "./duplicates.js";
 import { renderMap, onMapTap, visibleArea, focusRestaurant, showSearchResults, showCandidate, clearPicking } from "./mapView.js";
-import { searchPlaces, searchAddress, lookupPosition } from "./geo.js";
+import { searchWithFallbacks, lookupPosition } from "./geo.js";
 import { renderTagManager, renderBulkTagEditor } from "./tagTools.js";
 
 // Bump on every change that gets pushed, so a device still running a
 // cached older app.js is easy to spot (shown at the bottom of Settings).
-const APP_VERSION = "2026-10-25c";
+const APP_VERSION = "2026-10-25d";
 
 // Phones have no visible error console; surface anything uncaught in the
 // status line instead of failing silently.
@@ -84,10 +84,8 @@ let detailUi = closedDetailUi();
 // null = just browsing; { type: "restaurant", id, name } = for an existing
 // restaurant; { type: "form" } = for the New form.
 let mapPick = null;
-// Location for the New form, chosen on the map or found from the typed
-// address: { lat, lng, address, osm }.
+// Location chosen on the map for the New form: { lat, lng, address, osm }.
 let formLocation = null;
-let formLocationFromAddress = false;
 // Restaurant to centre on the next time the map is drawn ("Show on map").
 let pendingFocusId = null;
 
@@ -169,9 +167,6 @@ const els = {
   tokenInput: document.getElementById("setting-token"),
   removeTokenButton: document.getElementById("btn-remove-token"),
   ratingForm: document.getElementById("rating-form"),
-  addressInput: document.getElementById("field-address"),
-  findAddressButton: document.getElementById("btn-find-address"),
-  addressResults: document.getElementById("address-results"),
   locationHint: document.getElementById("field-location-hint"),
   nameInput: document.getElementById("field-name"),
   noteInput: document.getElementById("field-note"),
@@ -377,14 +372,18 @@ async function runMapSearch() {
   els.mapSearchInput.blur();
   setStatus(els.statusMessage, "Searching…");
   try {
-    const places = await searchPlaces(query, visibleArea());
+    // Also takes pasted addresses: simpler versions are tried if the full
+    // text isn't found (geo.js searchVariants).
+    const { places, vague } = await searchWithFallbacks(query, visibleArea());
     renderMapResults(places);
     showSearchResults(places, choosePlace);
     setStatus(
       els.statusMessage,
-      places.length
-        ? `${places.length} result(s) — pick one in the list or on the map.`
-        : "Nothing found. Try adding the city to the search, or move the map there first."
+      vague
+        ? "Only the street or area was found, not the exact address. Pick it and check the position, or tap the right spot on the map."
+        : places.length
+          ? `${places.length} result(s). Pick one in the list or on the map.`
+          : "Nothing found. Try adding the city to the search, move the map there first, or tap the spot on the map."
     );
   } catch (err) {
     setStatus(els.statusMessage, describeError(err, "Search failed"), true);
@@ -416,21 +415,11 @@ async function applyLocationToRestaurant(id, place) {
 }
 
 function applyLocationToForm(place) {
-  setFormLocation(locationFields(place), false);
+  formLocation = locationFields(place);
   if (!els.nameInput.value.trim() && place.name) els.nameInput.value = place.name;
-  if (!els.addressInput.value.trim() && place.address) els.addressInput.value = place.address;
+  updateFormLocationHint();
   endMapPick();
   showTab("new");
-}
-
-// fromAddress: the location was looked up from the typed address, so
-// editing the address afterwards makes it stale (and clears it).
-function setFormLocation(location, fromAddress) {
-  formLocation = location;
-  formLocationFromAddress = Boolean(location && fromAddress);
-  els.addressResults.hidden = true;
-  els.addressResults.textContent = "";
-  updateFormLocationHint();
 }
 
 function updateFormLocationHint() {
@@ -438,60 +427,6 @@ function updateFormLocationHint() {
     ? `📍 ${formLocation.address || "Location chosen on the map"}`
     : "No location yet.";
   els.formClearLocation.hidden = !formLocation;
-}
-
-// An address search finds the address, not necessarily the restaurant
-// itself, so no OSM reference is kept (two places in one building must not
-// look like the same place to duplicate detection).
-function useFoundAddress(place) {
-  setFormLocation({ ...locationFields(place), osm: null }, true);
-  setStatus(els.statusMessage, "Address found — check the location under the address field.");
-}
-
-async function findAddress() {
-  const query = els.addressInput.value.trim();
-  if (!query) return;
-  els.addressInput.blur();
-  setStatus(els.statusMessage, "Looking up the address…");
-  try {
-    const places = await searchAddress(query, visibleArea());
-    if (places.length === 1) {
-      useFoundAddress(places[0]);
-      return;
-    }
-    els.addressResults.textContent = "";
-    els.addressResults.hidden = places.length === 0;
-    for (const place of places) {
-      const button = el("button", { type: "button", className: "map-result" }, [
-        el("strong", { textContent: place.name || "(no name)" }),
-        el("span", { className: "hint", textContent: place.address }),
-      ]);
-      button.addEventListener("click", () => useFoundAddress(place));
-      els.addressResults.appendChild(el("li", {}, [button]));
-    }
-    setStatus(
-      els.statusMessage,
-      places.length
-        ? `${places.length} matches — pick the right one under the address field.`
-        : 'Address not found. Try a shorter version (street, number, city), or use "Set location on map".'
-    );
-  } catch (err) {
-    setStatus(els.statusMessage, describeError(err, "Address lookup failed"), true);
-  }
-}
-
-function initAddressLookup() {
-  els.findAddressButton.addEventListener("click", findAddress);
-  // Enter in the address field looks it up instead of submitting the form.
-  els.addressInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      findAddress();
-    }
-  });
-  els.addressInput.addEventListener("input", () => {
-    if (formLocationFromAddress) setFormLocation(null, false);
-  });
 }
 
 function initMapPicking() {
@@ -515,7 +450,10 @@ function initMapPicking() {
     els.mapSearchInput.value = els.nameInput.value.trim();
     showTab("map");
   });
-  els.formClearLocation.addEventListener("click", () => setFormLocation(null, false));
+  els.formClearLocation.addEventListener("click", () => {
+    formLocation = null;
+    updateFormLocationHint();
+  });
 }
 
 function allKnownTags() {
@@ -1148,10 +1086,6 @@ function buildFromForm() {
     ...stamp(),
   };
   if (formLocation) Object.assign(restaurant, formLocation);
-  // The address as typed/pasted wins over the looked-up one: it's the
-  // version the user knows (e.g. Google's).
-  const typedAddress = els.addressInput.value.trim();
-  if (typedAddress) restaurant.address = typedAddress;
   if (els.wishlistCheckbox.checked) return { restaurant, visit: null };
   const visit = {
     id: generateId(),
@@ -1224,7 +1158,8 @@ async function saveFromForm({ decision, sameAs, differentFrom }) {
     els.ratingForm.reset();
     els.ratingPicker.dataset.value = "0";
     els.visitedFieldsContainer.hidden = false;
-    setFormLocation(null, false);
+    formLocation = null;
+    updateFormLocationHint();
     formTags = [];
     initPickers();
     refreshList();
@@ -1341,7 +1276,6 @@ async function init() {
   initPickers();
   initSettingsPanel();
   initImport();
-  initAddressLookup();
   initMapPicking();
   initWishlistToggle();
   initRatingForm();
