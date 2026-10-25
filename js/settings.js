@@ -24,6 +24,19 @@ export function removeToken() {
   localStorage.removeItem(KEY_TOKEN);
 }
 
+// Whether the List shows a third "Archived" view (closed restaurants).
+// Off by default: archived places are meant to stay out of the way.
+const KEY_SHOW_ARCHIVED = "foodlog_show_archived";
+
+export function getShowArchived() {
+  return localStorage.getItem(KEY_SHOW_ARCHIVED) === "1";
+}
+
+export function saveShowArchived(show) {
+  if (show) localStorage.setItem(KEY_SHOW_ARCHIVED, "1");
+  else localStorage.removeItem(KEY_SHOW_ARCHIVED);
+}
+
 // Last area typed into "Find locations" (Section 15.3) — only suggested
 // next time, never hardcoded.
 const KEY_LOCATE_AREA = "foodlog_locate_area";

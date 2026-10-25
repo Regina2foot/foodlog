@@ -36,6 +36,8 @@ const byNewestVisit = (a, b) =>
 
 // Restaurants joined with their visits, for display: `visits` newest
 // first, `latest` = most recent visit (null for a wishlist place).
+// `isArchived`: marked as closed (`archived_at` set) — kept for the
+// record, but left out of Rated/Wishlist, the map and Find locations.
 export function buildRestaurantViews(doc) {
   const visitsByRestaurant = new Map();
   for (const visit of doc.visits) {
@@ -50,6 +52,7 @@ export function buildRestaurantViews(doc) {
       visits,
       latest: visits[0] || null,
       isWishlist: visits.length === 0,
+      isArchived: Boolean(r.archived_at),
     };
   });
 }

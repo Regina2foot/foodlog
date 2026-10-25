@@ -672,6 +672,7 @@ extra (people are used to it).
       "tags": ["Italian", "Date night"],
       "note": "Recommended by a friend",
       "not_same_as": ["r9z8y7x6"],
+      "archived_at": null,
       "created_by": "github-username",
       "created_at": "2026-09-20T18:32:00Z"
     }
@@ -699,7 +700,9 @@ extra (people are used to it).
   `tags` describe the restaurant (cuisine, occasion, source list such as
   "Gregors recommendations"). `note` is free text about the restaurant
   itself (e.g. who recommended it), as opposed to a visit's comment.
-  `not_same_as` lists restaurant ids the user said are different places
+  `not_same_as` lists restaurant ids the user said are different places.
+  `archived_at` (YYYY-MM-DD, added 2026-10): set when the restaurant is
+  archived as closed; null/absent = not archived
 - Visit fields: `rating` 0–5 (whole number, required on a visit),
   `comment`, `visited_at` (YYYY-MM-DD). No `price_level` (removed
   2026-10, see Section 13); old values in the file are simply ignored
@@ -726,12 +729,20 @@ stay quick and reliable.
 ### 15.3 Locations and the map
 
 - **Map tab** (between List and New): Leaflet + OpenStreetMap tiles, one
-  circle marker per located restaurant (rated: filled orange; wishlist:
-  white with blue outline), tap → popup (name, stars, tag dots, Open) →
-  opens the restaurant in the List tab. Zooms to fit all markers the
-  first time; after that the view stays where the user left it. A line
-  above the map says how many restaurants have a location. Not built yet:
-  filters on the map (Rated/Wishlist, tags, search)
+  marker per located, non-archived restaurant: a small **pie in the
+  colours of all its tags** (same order as the list's tag dots; grey
+  without tags) — rated = solid, wishlist = ring with a white middle
+  (`L.divIcon` + CSS `conic-gradient`, colours are computed values, never
+  user text). Tap → popup (name, stars, tag dots, Open) → opens the
+  restaurant in the List tab. Zooms to fit all markers the first time;
+  after that the view stays where the user left it. A line above the map
+  says how many restaurants are shown / have a location
+- **Map filters** (above the map, kept while the app is open): rating —
+  All / Wishlist only / 0★ (no recommendation) / 1–3★ / 4–5★ / 5★ only,
+  judged by the latest visit like the list (`matchesMapFilter` in
+  `sort.js`); tag chips in one horizontally scrolling row, several can be
+  on at once (a restaurant shows if it has any of them; "All tags" clears).
+  "Show on map" for a restaurant the filter hides clears the filter
 - **Search bar on the Map tab** (Nominatim, `geo.js`): results appear as
   a list under the bar and as grey markers. Searches are **biased toward
   the area currently visible on the map** but not limited to it, so
@@ -849,7 +860,17 @@ stay quick and reliable.
 - CSV export: one row per visit with the restaurant's fields, plus one
   row per wishlist restaurant with empty visit columns
 - Bulk select / Delete / Merge / Not the same: per restaurant
-- **Bulk tags** (added 2026-10): with rows ticked, a "Tags… (n)" button
+- **Archive** (closed restaurants, added 2026-10): restaurant page → Edit
+  restaurant → "Archive (closed)" (confirmation) sets `archived_at`;
+  "Unarchive (open again)" clears it. Archived restaurants keep all their
+  visits but are left out of Rated/Wishlist, the map and Find locations;
+  their page says "Archived (closed) since …". Deliberately low-key:
+  only when Settings → Archive → "Show archived (closed) restaurants as a
+  third list" is ticked (`localStorage` `foodlog_show_archived`, off by
+  default) does the List get a third view, Rated / Wishlist /
+  **Archived** (Rated columns, own sorting, default name A→Z). Duplicate
+  detection still includes them (the warning says "in your Archived
+  list"), so a closed place isn't re-added by accident- **Bulk tags** (added 2026-10): with rows ticked, a "Tags… (n)" button
   opens a panel listing every tag with a checkbox showing whether all
   (checked), some (dash, "n of m") or none of the ticked restaurants have
   it. Tapping cycles all → none → back to "some" (= leave as is, only for

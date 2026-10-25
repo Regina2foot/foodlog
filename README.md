@@ -42,12 +42,17 @@ token** in Settings to clear it (e.g. on a shared computer).
   already have, the app offers to add the visit there instead.
 - **Map**: your restaurants on an OpenStreetMap map; search for a place
   (or paste an address, e.g. from Google Maps) or tap the map to add one.
+  Dots show the restaurant's tag colours; filter by rating and tags above
+  the map.
   **Find locations…** looks up restaurants that have no location yet
   (e.g. after an import) by name in an area you name, like "Berlin".
 - **List**: one row per restaurant, showing its most recent visit.
   Sortable by rating, name, or date. Tick rows to delete or merge them,
   or to add/remove tags on all of them at once (**Tags…**).
 - **Settings → Tags**: rename or delete a tag everywhere.
+- **Archive**: a closed restaurant can be archived (its page → Edit
+  restaurant). It keeps its visits but leaves the lists and the map; tick
+  Settings → Archive to see archived ones as a third list.
 - Click a row to open the **restaurant detail view**: full visit history,
   a rating-over-time chart, and an "Open in Google Maps" button.
   Edit or delete individual visits from there.

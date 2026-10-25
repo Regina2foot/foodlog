@@ -43,6 +43,7 @@
       <div class="view-toggle" id="view-toggle" role="tablist">
         <button type="button" id="btn-view-visited" class="toggle-btn active" aria-pressed="true">Rated</button>
         <button type="button" id="btn-view-wishlist" class="toggle-btn" aria-pressed="false">Wishlist</button>
+        <button type="button" id="btn-view-archived" class="toggle-btn" aria-pressed="false" hidden>Archived</button>
       </div>
       <div class="sort-controls" id="sort-controls">
         <label>
@@ -92,10 +93,18 @@
   <ul id="map-results" class="map-results" hidden></ul>
   <p id="map-summary" class="hint map-summary"></p>
   <div id="locate-panel" class="locate-panel" hidden></div>
+  <div id="map-filters" class="map-filters">
+    <label class="map-rating-filter">
+      Show
+      <select id="map-rating-filter"></select>
+    </label>
+    <div id="map-tag-filter" class="tag-filter" role="group" aria-label="Show only these tags on the map"></div>
+  </div>
   <div id="map" class="map-view" aria-label="Map of restaurants"></div>
   <p class="hint map-legend">
     <span class="legend-dot legend-rated"></span> Rated
     <span class="legend-dot legend-wishlist"></span> Wishlist
+    <span>· colours = tags</span>
     <span class="map-tap-hint">· Tap the map to add a place there</span>
   </p>
 </section>
@@ -177,6 +186,16 @@
         <button type="button" id="btn-remove-token">Remove token</button>
       </div>
     </form>
+    <h3>Archive</h3>
+    <label class="checkbox-label">
+      <input type="checkbox" id="setting-show-archived" />
+      Show archived (closed) restaurants as a third list
+    </label>
+    <p class="hint">
+      Archive a closed restaurant via its page → Edit restaurant → Archive.
+      Archived ones keep all their visits but never show on the map, and only
+      appear in the list when this is ticked.
+    </p>
     <h3>Tags</h3>
     <p class="hint">
       Rename or delete a tag on all restaurants at once. Renaming a tag to

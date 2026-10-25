@@ -330,6 +330,34 @@ export function renderTagFilter(container, tags, colors, selected, onSelect) {
   for (const tag of tags) container.appendChild(chip(tag, tag, tag));
 }
 
+// Like renderTagFilter, but several tags can be on at once (Map tab).
+// `selected` is a Set; onChange(nextSet) gets a new Set. "All tags"
+// clears the selection.
+export function renderTagChipsMulti(container, tags, colors, selected, onChange) {
+  container.textContent = "";
+  const chip = (label, active, tag, onClick) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "filter-chip" + (active ? " active" : "");
+    button.setAttribute("aria-pressed", String(active));
+    if (tag) button.appendChild(buildTagDot(tag, colors));
+    button.appendChild(document.createTextNode(label));
+    button.addEventListener("click", onClick);
+    return button;
+  };
+  container.appendChild(chip("All tags", selected.size === 0, null, () => onChange(new Set())));
+  for (const tag of tags) {
+    container.appendChild(
+      chip(tag, selected.has(tag), tag, () => {
+        const next = new Set(selected);
+        if (next.has(tag)) next.delete(tag);
+        else next.add(tag);
+        onChange(next);
+      })
+    );
+  }
+}
+
 export function setStatus(el, message, isError = false) {
   el.textContent = message;
   el.style.color = isError ? "#c0392b" : "";

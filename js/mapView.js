@@ -13,8 +13,6 @@ const ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright" ta
 // as a tap on the map underneath and start a "what's here?" lookup.
 const BASE_STYLE = { bubblingMouseEvents: false };
 const MARKER_STYLE = {
-  rated: { ...BASE_STYLE, radius: 7, color: "#a84f06", weight: 2, fillColor: "#d4820a", fillOpacity: 0.9 },
-  wishlist: { ...BASE_STYLE, radius: 7, color: "#3b7dd8", weight: 2, fillColor: "#ffffff", fillOpacity: 1 },
   result: { ...BASE_STYLE, radius: 6, color: "#555", weight: 2, fillColor: "#bbb", fillOpacity: 0.9 },
   candidate: { ...BASE_STYLE, radius: 10, color: "#c0392b", weight: 3, fillColor: "#ffffff", fillOpacity: 0.6 },
 };
@@ -57,6 +55,33 @@ function buildPopup(restaurant, tagColors, onOpen) {
   return box;
 }
 
+// A restaurant's marker: a small pie split into the colours of its tags
+// (in the same order as the list's tag dots), grey without tags. Rated =
+// solid; wishlist = ring with a white middle (CSS .pie-wishlist). Colours
+// are computed values (tagColors.js), never user text. Leaflet markers
+// don't pass taps through to the map, so a tap here never starts a
+// "what's here?" lookup.
+const PIE_SIZE = 18;
+
+function pieIcon(restaurant, tagColors) {
+  const colors = (restaurant.tags || []).map((t) => tagColors.get(t)).filter(Boolean);
+  const dot = document.createElement("div");
+  dot.className = "pie-marker" + (restaurant.isWishlist ? " pie-wishlist" : "");
+  if (colors.length === 1) {
+    dot.style.background = colors[0];
+  } else if (colors.length > 1) {
+    const step = 100 / colors.length;
+    dot.style.background = `conic-gradient(${colors.map((c, i) => `${c} ${i * step}% ${(i + 1) * step}%`).join(", ")})`;
+  }
+  return L.divIcon({
+    html: dot,
+    className: "pie-marker-icon",
+    iconSize: [PIE_SIZE, PIE_SIZE],
+    iconAnchor: [PIE_SIZE / 2, PIE_SIZE / 2],
+    popupAnchor: [0, -PIE_SIZE / 2],
+  });
+}
+
 // Draws one marker per restaurant that has a location. Must be called while
 // the map's container is visible (Leaflet needs its size). On the first
 // call with any markers, zooms to fit them; afterwards the view is left as
@@ -69,7 +94,7 @@ export function renderMap(container, restaurants, { tagColors, onOpenRestaurant 
 
   const located = restaurants.filter(hasLocation);
   for (const r of located) {
-    const marker = L.circleMarker([r.lat, r.lng], r.isWishlist ? MARKER_STYLE.wishlist : MARKER_STYLE.rated)
+    const marker = L.marker([r.lat, r.lng], { icon: pieIcon(r, tagColors), title: r.name })
       .bindPopup(() => buildPopup(r, tagColors, onOpenRestaurant))
       .addTo(markerLayer);
     markersById.set(r.id, marker);

@@ -15,10 +15,20 @@ import {
   hasLocation,
   DATA_FILE,
 } from "./data.js";
-import { sortRestaurants } from "./sort.js";
-import { renderRestaurantList, renderListHeader, renderStarPicker, renderTagPicker, renderTagFilter, setStatus } from "./render.js";
+import { sortRestaurants, matchesMapFilter, MAP_RATING_FILTERS } from "./sort.js";
+import { renderRestaurantList, renderListHeader, renderStarPicker, renderTagPicker, renderTagFilter, setStatus, renderTagChipsMulti } from "./render.js";
 import { computeTagColors } from "./tagColors.js";
-import { getSettings, saveSettings, removeToken, hasCompleteSettings, parseRepoInput, getLocateArea, saveLocateArea } from "./settings.js";
+import {
+  getSettings,
+  saveSettings,
+  removeToken,
+  hasCompleteSettings,
+  parseRepoInput,
+  getLocateArea,
+  saveLocateArea,
+  getShowArchived,
+  saveShowArchived,
+} from "./settings.js";
 import { fetchDataDoc, saveDataDoc, fetchCurrentUser, GitHubApiError } from "./api.js";
 import { renderRestaurantDetail } from "./history.js";
 import { openMapsUrl } from "./maps.js";
@@ -32,7 +42,7 @@ import { createLocatePanel } from "./locateView.js";
 
 // Bump on every change that gets pushed, so a device still running a
 // cached older app.js is easy to spot (shown at the bottom of Settings).
-const APP_VERSION = "2026-10-25f";
+const APP_VERSION = "2026-10-25g";
 
 // Phones have no visible error console; surface anything uncaught in the
 // status line instead of failing silently.
@@ -61,13 +71,19 @@ const SORT_OPTIONS = {
     ["name", "Name"],
     ["added", "Date added"],
   ],
+  archived: [
+    ["name", "Name"],
+    ["rating", "Rating"],
+    ["date", "Date"],
+  ],
 };
 const sortState = {
   visited: { field: "rating", dir: "desc" },
   wishlist: { field: "name", dir: "asc" },
+  archived: { field: "name", dir: "asc" },
 };
 let currentUser = null;
-let listView = "visited"; // "visited" (Rated) | "wishlist"
+let listView = "visited"; // "visited" (Rated) | "wishlist" | "archived"
 let tagFilter = ""; // "" = all tags
 let tagColors = new Map(); // tag -> colour, recomputed whenever the list is rendered
 let formTags = []; // New form's current tag selection
@@ -87,6 +103,8 @@ let detailUi = closedDetailUi();
 let mapPick = null;
 // Location chosen on the map for the New form: { lat, lng, address, osm }.
 let formLocation = null;
+// Map tab filter (sort.js matchesMapFilter); kept while the app is open.
+let mapFilter = { rating: "all", tags: new Set() };
 // "Find locations" panel on the Map tab (created in initLocatePanel).
 let locatePanel = null;
 // Restaurant to centre on the next time the map is drawn ("Show on map").
@@ -185,6 +203,8 @@ const els = {
   visitedFieldsContainer: document.getElementById("visited-fields"),
   viewVisitedButton: document.getElementById("btn-view-visited"),
   viewWishlistButton: document.getElementById("btn-view-wishlist"),
+  viewArchivedButton: document.getElementById("btn-view-archived"),
+  showArchivedCheckbox: document.getElementById("setting-show-archived"),
   sortControls: document.getElementById("sort-controls"),
   restaurantTableHeaderRow: document.getElementById("restaurant-table-header-row"),
   importFileInput: document.getElementById("import-file-input"),
@@ -209,6 +229,8 @@ const els = {
   mapPanel: document.querySelector('[data-tab-panel="map"]'),
   mapPickBanner: document.getElementById("map-pick-banner"),
   locatePanel: document.getElementById("locate-panel"),
+  mapRatingFilter: document.getElementById("map-rating-filter"),
+  mapTagFilter: document.getElementById("map-tag-filter"),
   mapPickText: document.getElementById("map-pick-text"),
   mapPickCancel: document.getElementById("btn-map-pick-cancel"),
   mapSearchForm: document.getElementById("map-search-form"),
@@ -236,12 +258,16 @@ function refreshList() {
     mode = "duplicates";
   } else {
     // Rated = has at least one visit; Wishlist = no visits (Section 15.1).
-    const inView = views.filter((r) => (listView === "wishlist" ? r.isWishlist : !r.isWishlist));
+    // Archived restaurants only show in their own view (if enabled).
+    const inView = views.filter((r) =>
+      listView === "archived" ? r.isArchived : !r.isArchived && (listView === "wishlist" ? r.isWishlist : !r.isWishlist)
+    );
     refreshTagFilter(inView);
     const filtered = inView.filter((r) => matchesNameSearch(r) && (!tagFilter || r.tags.includes(tagFilter)));
     const { field, dir } = sortState[listView];
     sorted = sortRestaurants(filtered, field, dir);
-    mode = listView;
+    // The archived view uses the Rated columns (rating, date, comment).
+    mode = listView === "archived" ? "visited" : listView;
   }
 
   els.viewToggle.hidden = showDuplicates;
@@ -270,7 +296,12 @@ function refreshList() {
     {
       groupStartKeys,
       tagColors,
-      emptyMessage: nameSearch || tagFilter ? "No restaurants match your search or tag filter." : undefined,
+      emptyMessage:
+        nameSearch || tagFilter
+          ? "No restaurants match your search or tag filter."
+          : listView === "archived" && !showDuplicates
+            ? "No archived restaurants."
+            : undefined,
     }
   );
   els.sortControls.hidden = showDuplicates;
@@ -284,20 +315,32 @@ function refreshList() {
 // Draws the Map tab, but only while it's visible (Leaflet needs its size).
 function refreshMap() {
   if (els.mapPanel.hidden) return;
-  const shown = renderMap(els.mapContainer, views, {
+  // Archived (closed) restaurants never appear on the map.
+  const active = views.filter((r) => !r.isArchived);
+  // "Show on map" for a restaurant the filter hides: clear the filter.
+  const focus = pendingFocusId && active.find((r) => r.id === pendingFocusId);
+  if (focus && !matchesMapFilter(focus, mapFilter)) mapFilter = { rating: "all", tags: new Set() };
+  renderMapFilters(active);
+
+  const matching = active.filter((r) => matchesMapFilter(r, mapFilter));
+  const shown = renderMap(els.mapContainer, matching, {
     tagColors,
     onOpenRestaurant: (id) => {
       renderTab("list");
       showDetail(id);
     },
   });
-  const total = views.length;
+  const total = active.length;
+  const filtered = mapFilter.rating !== "all" || mapFilter.tags.size > 0;
   els.mapSummary.textContent =
     total === 0
       ? "No restaurants yet."
-      : shown === total
-        ? `All ${total} restaurants are on the map.`
-        : `${shown} of ${total} restaurants have a location and are shown here. The others don't have one yet.`;
+      : filtered
+        ? `${matching.length} of ${total} restaurants match the filter` +
+          (shown === matching.length ? "." : `; ${shown} of them have a location and are shown.`)
+        : shown === total
+          ? `All ${total} restaurants are on the map.`
+          : `${shown} of ${total} restaurants have a location and are shown here. The others don't have one yet.`;
   els.mapPickBanner.hidden = !mapPick;
   els.mapPickText.textContent = !mapPick
     ? ""
@@ -309,6 +352,30 @@ function refreshMap() {
     focusRestaurant(pendingFocusId);
     pendingFocusId = null;
   }
+}
+
+// Rating choice + tag chips above the map; only tags that occur in
+// non-archived restaurants are offered.
+function renderMapFilters(active) {
+  if (els.mapRatingFilter.options.length === 0) {
+    for (const [value, label] of MAP_RATING_FILTERS) els.mapRatingFilter.appendChild(el("option", { value, textContent: label }));
+    els.mapRatingFilter.addEventListener("change", () => {
+      mapFilter = { ...mapFilter, rating: els.mapRatingFilter.value };
+      refreshMap();
+    });
+  }
+  els.mapRatingFilter.value = mapFilter.rating;
+  const tags = [...new Set(active.flatMap((r) => r.tags))].sort((a, b) => a.localeCompare(b));
+  // Drop selected tags that no longer exist (renamed/deleted).
+  const kept = new Set([...mapFilter.tags].filter((t) => tags.includes(t)));
+  if (kept.size !== mapFilter.tags.size) mapFilter = { ...mapFilter, tags: kept };
+  els.mapTagFilter.hidden = tags.length === 0;
+  const scroll = els.mapTagFilter.scrollLeft; // keep the chip row where it was
+  renderTagChipsMulti(els.mapTagFilter, tags, tagColors, mapFilter.tags, (next) => {
+    mapFilter = { ...mapFilter, tags: next };
+    refreshMap();
+  });
+  els.mapTagFilter.scrollLeft = scroll;
 }
 
 // --- Choosing a location on the map ---------------------------------------
@@ -484,7 +551,7 @@ async function saveFoundLocations(updates) {
 
 function initLocatePanel() {
   locatePanel = createLocatePanel(els.locatePanel, {
-    getRestaurants: () => views,
+    getRestaurants: () => views.filter((r) => !r.isArchived),
     getLastArea: getLocateArea,
     saveArea: saveLocateArea,
     isPicking: () => Boolean(mapPick),
@@ -599,6 +666,12 @@ function refreshDetail() {
       },
       onSaveRestaurant: (changes) =>
         saveDetailChange((d) => updateRestaurant(d, id, changes), "Edit restaurant", "Restaurant updated."),
+      onArchive: (archived) =>
+        saveDetailChange(
+          (d) => updateRestaurant(d, id, { archived_at: archived ? new Date().toISOString().slice(0, 10) : null }),
+          archived ? "Archive restaurant" : "Unarchive restaurant",
+          archived ? "Archived. It's now only in the Archived list (if enabled in Settings)." : "Back in your lists."
+        ),
       onDeleteRestaurant: async () => {
         try {
           await writeWithConflictRetry((d) => deleteRestaurants(d, [id]), { message: "Delete restaurant" });
@@ -707,18 +780,36 @@ function initTabs() {
   }
 }
 
-function initViewToggle() {
-  function setView(view) {
-    listView = view;
-    selectedIds.clear();
-    els.viewVisitedButton.classList.toggle("active", view === "visited");
-    els.viewVisitedButton.setAttribute("aria-pressed", String(view === "visited"));
-    els.viewWishlistButton.classList.toggle("active", view === "wishlist");
-    els.viewWishlistButton.setAttribute("aria-pressed", String(view === "wishlist"));
-    refreshList();
+function setListView(view) {
+  listView = view;
+  selectedIds.clear();
+  for (const [button, name] of [
+    [els.viewVisitedButton, "visited"],
+    [els.viewWishlistButton, "wishlist"],
+    [els.viewArchivedButton, "archived"],
+  ]) {
+    button.classList.toggle("active", view === name);
+    button.setAttribute("aria-pressed", String(view === name));
   }
-  els.viewVisitedButton.addEventListener("click", () => setView("visited"));
-  els.viewWishlistButton.addEventListener("click", () => setView("wishlist"));
+  refreshList();
+}
+
+function initViewToggle() {
+  els.viewVisitedButton.addEventListener("click", () => setListView("visited"));
+  els.viewWishlistButton.addEventListener("click", () => setListView("wishlist"));
+  els.viewArchivedButton.addEventListener("click", () => setListView("archived"));
+  // The Archived view only exists while the setting is on.
+  const applyShowArchived = () => {
+    const show = getShowArchived();
+    els.showArchivedCheckbox.checked = show;
+    els.viewArchivedButton.hidden = !show;
+    if (!show && listView === "archived") setListView("visited");
+  };
+  els.showArchivedCheckbox.addEventListener("change", () => {
+    saveShowArchived(els.showArchivedCheckbox.checked);
+    applyShowArchived();
+  });
+  applyShowArchived();
 }
 
 // Selection is cleared whenever the visible set changes, so bulk actions
@@ -877,6 +968,7 @@ function initWishlistToggle() {
 
 // Which tab a matched restaurant lives in, so a match isn't confusing.
 function listNameOf(restaurant) {
+  if (restaurant.isArchived) return "Archived";
   return restaurant.isWishlist ? "Wishlist" : "Rated";
 }
 

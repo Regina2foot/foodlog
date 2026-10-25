@@ -625,6 +625,7 @@ tbody tr:hover {
 
 .map-legend {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.35rem;
   margin-top: 0.4rem;
@@ -644,13 +645,76 @@ tbody tr:hover {
 }
 
 .legend-rated {
-  background: #d4820a;
-  border-color: #a84f06;
+  background: conic-gradient(#d4820a 0 50%, #3b7dd8 50% 100%);
+  border-color: #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55);
 }
 
 .legend-wishlist {
+  background: radial-gradient(circle, #fff 0 32%, transparent 33%),
+    conic-gradient(#d4820a 0 50%, #3b7dd8 50% 100%);
+  border-color: #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55);
+}
+
+/* Restaurant markers: a pie in the colours of the restaurant's tags (grey
+   without tags); wishlist = ring with a white middle. */
+.pie-marker-icon {
+  background: none;
+  border: none;
+}
+
+.pie-marker {
+  position: relative;
+  box-sizing: border-box;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #9aa0a6;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+}
+
+.pie-wishlist::after {
+  content: "";
+  position: absolute;
+  inset: 4.5px;
+  border-radius: 50%;
   background: #fff;
-  border-color: #3b7dd8;
+}
+
+/* Map filters: rating choice + one scrollable row of tag chips, so many
+   tags never push the map off the screen. */
+.map-filters {
+  margin: 0 0 0.5rem;
+}
+
+.map-rating-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+}
+
+.map-rating-filter select {
+  padding: 0.25rem;
+  font-size: 0.95rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+}
+
+.map-filters .tag-filter {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  margin-top: 0.4rem;
+  padding-bottom: 0.2rem;
+}
+
+.map-filters .filter-chip {
+  flex: 0 0 auto;
 }
 
 .map-popup {
@@ -869,4 +933,13 @@ tbody tr:hover {
 
 .locate-choices .map-result:last-child {
   border-bottom: none;
+}
+
+/* Restaurant page of an archived (closed) restaurant. */
+.archived-note {
+  margin: -0.25rem 0 0.75rem;
+  padding: 0.4rem 0.6rem;
+  border-left: 3px solid var(--border);
+  font-size: 0.9rem;
+  opacity: 0.8;
 }

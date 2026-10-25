@@ -185,7 +185,7 @@ function renderVisitForm(visit, { onSave, onCancel }) {
 
 // Edit form for the restaurant itself (not a visit): name, tags, note,
 // plus "Delete restaurant". The location is changed via "Set location".
-function renderRestaurantForm(restaurant, allTags, tagColors, { onSave, onCancel, onDelete }) {
+function renderRestaurantForm(restaurant, allTags, tagColors, { onSave, onCancel, onDelete, onArchive }) {
   const card = el("div", { className: "visit-card visit-edit" });
   const nameInput = el("input", { type: "text", value: restaurant.name || "" });
   const noteInput = el("textarea", { rows: 2, value: restaurant.note || "", placeholder: "e.g. who recommended it" });
@@ -220,6 +220,20 @@ function renderRestaurantForm(restaurant, allTags, tagColors, { onSave, onCancel
   });
   const cancelButton = el("button", { type: "button", textContent: "Cancel" });
   cancelButton.addEventListener("click", onCancel);
+  // Archive = closed for good, but kept for the record (not deleted).
+  const archiveButton = el("button", {
+    type: "button",
+    textContent: restaurant.isArchived ? "Unarchive (open again)" : "Archive (closed)",
+  });
+  archiveButton.addEventListener("click", () => {
+    if (restaurant.isArchived) {
+      onArchive(false);
+    } else if (
+      confirm(`Archive "${restaurant.name}" as closed? It's kept with all its visits, but no longer shows in Rated, Wishlist or on the map.`)
+    ) {
+      onArchive(true);
+    }
+  });
   const deleteButton = el("button", { type: "button", textContent: "Delete restaurant", className: "danger-btn" });
   deleteButton.addEventListener("click", () => {
     const visits = restaurant.visits.length;
@@ -234,7 +248,7 @@ function renderRestaurantForm(restaurant, allTags, tagColors, { onSave, onCancel
       labeled("Tags", tagsContainer),
       labeled("Note", noteInput),
     ]),
-    el("div", { className: "form-actions" }, [saveButton, cancelButton, deleteButton])
+    el("div", { className: "form-actions" }, [saveButton, cancelButton, archiveButton, deleteButton])
   );
   return card;
 }
@@ -243,13 +257,22 @@ function renderRestaurantForm(restaurant, allTags, tagColors, { onSave, onCancel
 // restaurant view (data.js). `ui` = { editingRestaurant, addingVisit,
 // editingVisitId }. callbacks: onOpenMaps(url), onShowOnMap(),
 // onSetLocation(), onEditRestaurant(),
-// onSaveRestaurant(changes), onDeleteRestaurant(), onAddVisit(),
+// onSaveRestaurant(changes), onDeleteRestaurant(), onArchive(archived),
+// onAddVisit(),
 // onSaveNewVisit(fields), onEditVisit(id), onSaveVisit(id, fields),
 // onDeleteVisit(id), onCancel() (closes whichever form is open).
 export function renderRestaurantDetail(container, restaurant, callbacks, ui, allTags = [], tagColors = new Map()) {
   container.textContent = "";
 
   container.appendChild(el("h2", { textContent: restaurant.name }));
+  if (restaurant.isArchived) {
+    container.appendChild(
+      el("p", {
+        className: "archived-note",
+        textContent: `Archived (closed) since ${formatDate(restaurant.archived_at)}. Not shown in Rated, Wishlist or on the map. To undo: Edit restaurant → Unarchive.`,
+      })
+    );
+  }
 
   if (ui.editingRestaurant) {
     container.appendChild(
@@ -257,6 +280,7 @@ export function renderRestaurantDetail(container, restaurant, callbacks, ui, all
         onSave: callbacks.onSaveRestaurant,
         onCancel: callbacks.onCancel,
         onDelete: callbacks.onDeleteRestaurant,
+        onArchive: callbacks.onArchive,
       })
     );
   } else {
@@ -283,7 +307,7 @@ export function renderRestaurantDetail(container, restaurant, callbacks, ui, all
         textContent: located ? `📍 ${restaurant.address || "Location set"}` : "No location yet",
       }),
     ]);
-    if (located) {
+    if (located && !restaurant.isArchived) {
       const showButton = el("button", { type: "button", textContent: "Show on map" });
       showButton.addEventListener("click", callbacks.onShowOnMap);
       locationRow.appendChild(showButton);
