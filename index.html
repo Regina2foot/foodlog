@@ -26,8 +26,7 @@
   <button type="button" class="tab" role="tab" data-tab="map" aria-selected="false">Map</button>
   <button type="button" class="tab" role="tab" data-tab="new" aria-selected="false" aria-label="New rating">New</button>
   <button type="button" class="tab" role="tab" data-tab="settings" aria-selected="false">Settings</button>
-  <button type="button" class="tab" role="tab" data-tab="import" aria-selected="false">Import</button>
-  <button type="button" class="tab" role="tab" data-tab="export" aria-selected="false">Export</button>
+  <button type="button" class="tab" role="tab" data-tab="import" aria-selected="false">Import/Export</button>
 </nav>
 
 <div id="status-message" class="hint status-line" role="status"></div>
@@ -243,16 +242,16 @@
     <p id="import-status" class="hint"></p>
     <div id="import-review" hidden></div>
   </div>
+  <div id="export-panel">
+    <h2>Export</h2>
+    <p class="hint">
+      Downloads everything currently loaded as a CSV file (one row per visit),
+      e.g. to open in a spreadsheet. Nothing is sent anywhere.
+    </p>
+    <button id="btn-export-csv" type="button">Download CSV</button>
+  </div>
 </section>
 
-<section class="tab-panel" data-tab-panel="export" hidden>
-  <h2>Export</h2>
-  <p class="hint">
-    Downloads everything currently loaded as a CSV file (one row per visit),
-    e.g. to open in a spreadsheet. Nothing is sent anywhere.
-  </p>
-  <button id="btn-export-csv" type="button">Download CSV</button>
-</section>
 </main>
 
 <script src="vendor/leaflet/leaflet.js"></script>

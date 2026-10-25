@@ -60,7 +60,8 @@ token** in Settings to clear it (e.g. on a shared computer).
   a rating-over-time chart, and an "Open in Google Maps" button.
   Edit or delete individual visits from there.
 - **Refresh**: reloads the latest data from the data repo.
-- **Export CSV**: downloads the currently loaded data as a CSV file, one
+- **Import/Export** tab: Google Maps import on top; **Download CSV**
+  below it downloads the currently loaded data as a CSV file, one
   row per visit.
 
 ## Local development

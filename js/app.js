@@ -44,7 +44,7 @@ import { createRestorePanel } from "./restoreView.js";
 
 // Bump on every change that gets pushed, so a device still running a
 // cached older app.js is easy to spot (shown at the bottom of Settings).
-const APP_VERSION = "2026-10-25j";
+const APP_VERSION = "2026-10-25k";
 
 // Phones have no visible error console; surface anything uncaught in the
 // status line instead of failing silently.
@@ -358,9 +358,8 @@ function refreshMap() {
 }
 
 // Rating chips + tag chips above the map; only tags that occur in
-// non-archived restaurants are offered. Rating chips combine freely:
-// Wishlist and each star value toggle on/off; "Rated" = all star values;
-// "All" = no rating filter.
+// non-archived restaurants are offered. Rating chips combine freely: each
+// star value and Wishlist toggle on/off; "All" = no rating filter.
 function renderMapFilters(active) {
   const ratings = mapFilter.ratings;
   const setRatings = (next) => {
@@ -379,13 +378,11 @@ function renderMapFilters(active) {
     else next.add(value);
     setRatings(next);
   };
-  const allRated = STAR_VALUES.every((v) => ratings.has(v)) && !ratings.has("wishlist");
   els.mapRatingFilter.textContent = "";
   els.mapRatingFilter.append(
     chip("All", ratings.size === 0, () => setRatings(new Set())),
-    chip("Rated", allRated, () => setRatings(new Set(STAR_VALUES))),
-    chip("Wishlist", ratings.has("wishlist"), toggle("wishlist")),
-    ...STAR_VALUES.map((v) => chip(`${v}★`, ratings.has(v), toggle(v)))
+    ...[...STAR_VALUES].reverse().map((v) => chip(`${v}★`, ratings.has(v), toggle(v))),
+    chip("Wishlist", ratings.has("wishlist"), toggle("wishlist"))
   );
   const tags = [...new Set(active.flatMap((r) => r.tags))].sort((a, b) => a.localeCompare(b));
   // Drop selected tags that no longer exist (renamed/deleted).
@@ -491,9 +488,8 @@ function endMapPick() {
   els.mapResults.textContent = "";
 }
 
-// A found location also clears an earlier "not on OpenStreetMap" mark.
 function locationFields(place) {
-  return { lat: place.lat, lng: place.lng, address: place.address || "", osm: place.osm || null, not_on_osm_at: null };
+  return { lat: place.lat, lng: place.lng, address: place.address || "", osm: place.osm || null };
 }
 
 // stayOnMap: picked from the "Find locations" list, so go back there
@@ -592,13 +588,6 @@ function initLocatePanel() {
     openRestaurant: (id) => {
       renderTab("list");
       showDetail(id);
-    },
-    markNotOnOsm: async (id) => {
-      await writeWithConflictRetry(
-        (d) => updateRestaurant(d, id, { not_on_osm_at: new Date().toISOString().slice(0, 10) }),
-        { message: "Mark restaurant as not on OpenStreetMap" }
-      );
-      refreshList();
     },
     setStatus: (text, isError = false) => setStatus(els.statusMessage, text, isError),
     describeError,

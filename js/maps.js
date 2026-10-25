@@ -70,14 +70,15 @@ export function extractCoordsFromMapsUrl(value) {
   return null;
 }
 
-// The link behind "Open in Google Maps": the saved Google link if there is
-// one; otherwise a Google Maps search for name + address, the exact
-// coordinates, or at least the name. It's only opened in a new tab — the
-// app itself never calls any Google service. Null only without a name.
+// The link behind "Open in Google Maps", in this order: a Google Maps
+// search for name + address; else the saved Google link (e.g. from the
+// import); else the exact coordinates; else at least the name. It's only
+// opened in a new tab — the app itself never calls any Google service.
+// Null only without a name.
 export function googleMapsLinkFor(restaurant) {
+  const search = (query) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+  if (restaurant.address) return search(`${restaurant.name}, ${restaurant.address}`);
   if (isSafeHttpUrl(restaurant.google_maps_url)) return restaurant.google_maps_url;
-  let query = restaurant.name || "";
-  if (restaurant.address) query = `${restaurant.name}, ${restaurant.address}`;
-  else if (Number.isFinite(restaurant.lat) && Number.isFinite(restaurant.lng)) query = `${restaurant.lat},${restaurant.lng}`;
-  return query ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}` : null;
+  if (Number.isFinite(restaurant.lat) && Number.isFinite(restaurant.lng)) return search(`${restaurant.lat},${restaurant.lng}`);
+  return restaurant.name ? search(restaurant.name) : null;
 }

@@ -226,13 +226,7 @@ function renderRestaurantForm(restaurant, allTags, tagColors, { onSave, onCancel
     textContent: restaurant.isArchived ? "Unarchive (open again)" : "Archive (closed)",
   });
   archiveButton.addEventListener("click", () => {
-    if (restaurant.isArchived) {
-      onArchive(false);
-    } else if (
-      confirm(`Archive "${restaurant.name}" as closed? It's kept with all its visits, but no longer shows in Rated, Wishlist or on the map.`)
-    ) {
-      onArchive(true);
-    }
+    onArchive(!restaurant.isArchived);
   });
   const deleteButton = el("button", { type: "button", textContent: "Delete restaurant", className: "danger-btn" });
   deleteButton.addEventListener("click", () => {
@@ -304,11 +298,7 @@ export function renderRestaurantDetail(container, restaurant, callbacks, ui, all
     const locationRow = el("div", { className: "location-row" }, [
       el("span", {
         className: "hint",
-        textContent: located
-          ? `📍 ${restaurant.address || "Location set"}`
-          : restaurant.not_on_osm_at
-            ? `No location yet · not on OpenStreetMap (checked ${formatDate(restaurant.not_on_osm_at)})`
-            : "No location yet",
+        textContent: located ? `📍 ${restaurant.address || "Location set"}` : "No location yet",
       }),
     ]);
     if (located && !restaurant.isArchived) {
@@ -328,13 +318,13 @@ export function renderRestaurantDetail(container, restaurant, callbacks, ui, all
     const editButton = el("button", { type: "button", textContent: "Edit restaurant" });
     editButton.addEventListener("click", callbacks.onEditRestaurant);
     container.appendChild(el("div", { className: "form-actions detail-actions" }, [mapsButton, editButton]));
-    // Which Google Maps place the button opens: a saved link (e.g. from the
-    // Google import) wins over the address, so say so.
+    // Without an address the button opens the saved Google link (e.g. from
+    // the import), which may point somewhere else — say so.
     if (googleLink && googleLink === restaurant.google_maps_url) {
       container.appendChild(
         el("p", {
           className: "hint maps-link-note",
-          textContent: "ⓘ Google Maps opens the link saved with this restaurant (from the import), not its address.",
+          textContent: "ⓘ No address yet, so Google Maps opens the link saved with this restaurant (from the import).",
         })
       );
     }

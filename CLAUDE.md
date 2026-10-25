@@ -674,7 +674,6 @@ extra (people are used to it).
       "note": "Recommended by a friend",
       "not_same_as": ["r9z8y7x6"],
       "archived_at": null,
-      "not_on_osm_at": null,
       "created_by": "github-username",
       "created_at": "2026-09-20T18:32:00Z"
     }
@@ -704,10 +703,7 @@ extra (people are used to it).
   itself (e.g. who recommended it), as opposed to a visit's comment.
   `not_same_as` lists restaurant ids the user said are different places.
   `archived_at` (YYYY-MM-DD, added 2026-10): set when the restaurant is
-  archived as closed; null/absent = not archived. `not_on_osm_at`
-  (YYYY-MM-DD, added 2026-10): the user marked it as not findable on
-  OpenStreetMap ("Not on OSM" in Find locations); cleared whenever a
-  location is set
+  archived as closed; null/absent = not archived
 - Visit fields: `rating` 0–5 (whole number, required on a visit),
   `comment`, `visited_at` (YYYY-MM-DD). No `price_level` (removed
   2026-10, see Section 13); old values in the file are simply ignored
@@ -744,9 +740,9 @@ stay quick and reliable.
   says how many restaurants are shown / have a location
 - **Map filters** (above the map, kept while the app is open), two
   horizontally scrolling chip rows (`matchesMapFilter` in `sort.js`):
-  rating chips that combine freely — Wishlist, 0★, 1★ … 5★ each on/off;
-  "Rated" = all six star values, "All" = no rating filter; judged by the
-  latest visit like the list. Tag chips: several can be on at once (a
+  rating chips in the order All, 5★, 4★ … 0★, Wishlist — each star value
+  and Wishlist on/off in any combination, "All" = no rating filter;
+  judged by the latest visit like the list. Tag chips: several can be on at once (a
   restaurant shows if it has any of them; "All tags" clears).
   "Show on map" for a restaurant the filter hides clears the filter
 - **Search bar on the Map tab** (Nominatim, `geo.js`): results appear as
@@ -844,11 +840,10 @@ stay quick and reliable.
   ("n possible matches" or "not found in …"): tap a candidate (saved
   right away), "Choose on map" (pick mode with the candidates as grey
   markers; returns to the Map tab, not the restaurant page), "Open entry"
-  (its page, e.g. to delete or archive a place that can't be found),
-  "Not on OSM" (saves `not_on_osm_at` = today; it's still searched in
-  later runs, since it may have been added to OSM, and then shows "Not
-  on OSM last time (date)"; the restaurant page shows it too), or
-  "Skip".
+  (its page, e.g. to delete or archive a place that can't be found), or
+  "Skip". A restaurant OSM doesn't know by name can still be placed via
+  "Choose on map" by pasting its address into the map search (a "Not on
+  OSM" mark was tried and dropped as unnecessary, 2026-10).
   Progress line "Checking i of n: name" and counters; **Stop** any time.
   "Run again" continues with what's left (located ones drop out; skipped
   ones only come back with a different area; ones still in the review
@@ -859,13 +854,12 @@ stay quick and reliable.
   memorials/streets with the same name were ignored
 - Duplicate detection gains a location signal: similar name *and* within
   ~60 m is a strong match; same `osm` reference = same place
-- "Open in Google Maps" is always available: uses `google_maps_url` if
-  present (kept from the Google import — no form field for it), otherwise
-  a Google Maps search for name + address, else the coordinates, else
-  just the name — opened like any link, no Google service is called by
-  the app itself. When the saved link is used, a small note under the
-  button says so ("opens the link saved with this restaurant, not its
-  address")
+- "Open in Google Maps" is always available (`googleMapsLinkFor`), in
+  this order: a Google Maps search for name + address; else the saved
+  `google_maps_url` (kept from the Google import — no form field for it);
+  else the coordinates; else just the name — opened like any link, no
+  Google service is called by the app itself. Only when the saved link is
+  used (no address yet) does a small note under the button say so
 
 ### 15.4 What changes in existing features
 
@@ -890,9 +884,13 @@ stay quick and reliable.
   review keep working, now per restaurant
 - CSV export: one row per visit with the restaurant's fields, plus one
   row per wishlist restaurant with empty visit columns
+- Tabs (2026-10): List · Map · New · Settings · **Import/Export** (the
+  former Import and Export tabs combined: Google import on top, CSV
+  download below)
 - Bulk select / Delete / Merge / Not the same: per restaurant
 - **Archive** (closed restaurants, added 2026-10): restaurant page → Edit
-  restaurant → "Archive (closed)" (confirmation) sets `archived_at`;
+  restaurant → "Archive (closed)" (no confirmation — it's undoable) sets
+  `archived_at`;
   "Unarchive (open again)" clears it. Archived restaurants keep all their
   visits but are left out of Rated/Wishlist, the map and Find locations;
   their page says "Archived (closed) since …". Deliberately low-key:

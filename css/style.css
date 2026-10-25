@@ -968,12 +968,6 @@ tbody tr:hover {
   margin: 0.4rem 0;
 }
 
-.locate-flag {
-  font-size: 0.8rem;
-  font-style: italic;
-  opacity: 0.75;
-}
-
 .locate-actions {
   flex-wrap: wrap;
   gap: 0.35rem;
@@ -981,4 +975,11 @@ tbody tr:hover {
 
 .maps-link-note {
   margin: 0.3rem 0 0;
+}
+
+/* Import/Export tab: the export part below the import. */
+#export-panel {
+  margin-top: 1.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
 }
