@@ -4,7 +4,7 @@
 // textContent, never innerHTML (see CLAUDE.md Section 4.1).
 
 import { buildStarsDisplay, buildTagDot, formatDate, renderStarPicker, renderTagPicker } from "./render.js";
-import { googleMapsLinkFor } from "./maps.js";
+import { googleMapsLinksFor } from "./maps.js";
 import { hasLocation } from "./data.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -311,23 +311,24 @@ export function renderRestaurantDetail(container, restaurant, callbacks, ui, all
     locationRow.appendChild(setButton);
     container.appendChild(locationRow);
 
-    const googleLink = googleMapsLinkFor(restaurant);
-    const mapsButton = el("button", { type: "button", textContent: "Open in Google Maps" });
-    mapsButton.disabled = !googleLink;
-    mapsButton.addEventListener("click", () => callbacks.onOpenMaps(googleLink));
+    // Two separate ways into Google Maps (by address, and by the saved
+    // link if there is one), so they can be compared.
+    const { search, savedLink } = googleMapsLinksFor(restaurant);
+    const actions = [];
+    if (search) {
+      const searchButton = el("button", { type: "button", textContent: `Google Maps (${search.by})` });
+      searchButton.addEventListener("click", () => callbacks.onOpenMaps(search.url));
+      actions.push(searchButton);
+    }
+    if (savedLink) {
+      const linkButton = el("button", { type: "button", textContent: "Google Maps (saved link)" });
+      linkButton.addEventListener("click", () => callbacks.onOpenMaps(savedLink));
+      actions.push(linkButton);
+    }
     const editButton = el("button", { type: "button", textContent: "Edit restaurant" });
     editButton.addEventListener("click", callbacks.onEditRestaurant);
-    container.appendChild(el("div", { className: "form-actions detail-actions" }, [mapsButton, editButton]));
-    // Without an address the button opens the saved Google link (e.g. from
-    // the import), which may point somewhere else — say so.
-    if (googleLink && googleLink === restaurant.google_maps_url) {
-      container.appendChild(
-        el("p", {
-          className: "hint maps-link-note",
-          textContent: "ⓘ No address yet, so Google Maps opens the link saved with this restaurant (from the import).",
-        })
-      );
-    }
+    actions.push(editButton);
+    container.appendChild(el("div", { className: "form-actions detail-actions" }, actions));
   }
 
   if (restaurant.visits.length > 0) {

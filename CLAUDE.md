@@ -854,12 +854,14 @@ stay quick and reliable.
   memorials/streets with the same name were ignored
 - Duplicate detection gains a location signal: similar name *and* within
   ~60 m is a strong match; same `osm` reference = same place
-- "Open in Google Maps" is always available (`googleMapsLinkFor`), in
-  this order: a Google Maps search for name + address; else the saved
-  `google_maps_url` (kept from the Google import — no form field for it);
-  else the coordinates; else just the name — opened like any link, no
-  Google service is called by the app itself. Only when the saved link is
-  used (no address yet) does a small note under the button say so
+- Google Maps from the restaurant page: **two buttons**, so the user can
+  check that they agree (`googleMapsLinksFor`): "Google Maps (address)" —
+  a Google Maps search for name + address (without an address it falls
+  back to the coordinates or the name, and the label says "position" /
+  "name"); and "Google Maps (saved link)", only when a safe
+  `google_maps_url` is stored (kept from the Google import — no form
+  field for it). Both are opened like any link; no Google service is
+  called by the app itself
 
 ### 15.4 What changes in existing features
 
