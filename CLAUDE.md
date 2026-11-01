@@ -861,13 +861,19 @@ terms).
     restaurants in my `wishlist` (also when friends have rated them).
     Rating one myself takes it off my wishlist
   - **Rated** = restaurants with at least one visit I can see (mine and
-    friends' shared ones), with a **Mine / Everyone** switch (default
-    Everyone; "Mine" = restaurants I rated). The same switch on the map
+    friends' shared ones)
+  - **Person selector** on the list and the map: **Everyone** (default) ·
+    **Me** · each person who has shared ratings (by GitHub login). Picking
+    a person shows only the restaurants *that person* rated, with *their*
+    latest rating instead of the average — "show me Anna's list" when
+    trusting someone's taste. It can only show what that person shared;
+    their private entries stay private
   - **Tags and notes** are always my own; tag colours come from my tags
-  - **Rating shown** in list and map = the average of each person's
-    *latest* visit (so frequent visitors don't count more), e.g. ★★★★☆
-    with "4.3 · 3 people"; the restaurant page lists each person's latest
-    rating and all visits with names
+  - **Rating shown** in list and map with "Everyone" = the average of each
+    person's *latest* visit (so frequent visitors don't count more), e.g.
+    ★★★★☆ with "4.3 · 3 people"; with one person selected, that person's
+    latest rating. The restaurant page lists each person's latest rating
+    and all visits with names
 - Additive: an old single-user file still reads fine (tags/notes inline
   on shared restaurants are shown until the migration, 10.4)
 
@@ -933,9 +939,9 @@ is still fine on a phone) and more people means more write conflicts
        owner's own account first)
 4. [ ] Migration of the owner's data (10.4) — after the user has set up
        the organization (Section 7)
-5. [ ] Multi-person display and guards: names, averages, Mine/Everyone
-       (list + map), personal tags/notes, wishlist references, edit/delete
-       guards
+5. [ ] Multi-person display and guards: names, averages, the person
+       selector (list + map), personal tags/notes, wishlist references,
+       edit/delete guards
 6. [ ] Setup guide for friends (README), first friend invited; fold the
        final state into Sections 5, 8, 9 and retire this plan
 
