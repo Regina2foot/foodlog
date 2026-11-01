@@ -107,7 +107,17 @@ const SAME_SPOT_METERS = 60;
 // (e.g. two branches of a chain).
 const DIFFERENT_PLACE_METERS = 300;
 
-// Works on anything restaurant-shaped: { name, google_maps_url, osm, lat, lng }.
+// Addresses as the app stores them come from Nominatim ("Street 12, City,
+// Country"). Their key is everything but the country, normalized — but
+// only when the first part has a house number: "Street, City" alone would
+// make every place on that street look like the same address.
+function addressKey(address) {
+  const parts = (address || "").split(",").map((p) => normalizeName(p)).filter(Boolean);
+  if (parts.length < 2 || !/\d/.test(parts[0])) return null;
+  return parts.slice(0, -1).join("|");
+}
+
+// Works on anything restaurant-shaped: { name, google_maps_url, osm, lat, lng, address }.
 function profileOf(r) {
   const url = (r.google_maps_url || "").trim();
   const placeKey = extractPlaceKey(url);
@@ -117,6 +127,7 @@ function profileOf(r) {
     placeKey,
     osm: r.osm || null,
     coords: Number.isFinite(r.lat) && Number.isFinite(r.lng) ? { lat: r.lat, lng: r.lng } : null,
+    address: addressKey(r.address),
     words,
   };
 }
@@ -161,33 +172,78 @@ export function createMatcher(restaurants) {
   };
 }
 
-// Groups restaurants that look like the same place (transitively: if A~B
-// and B~C, all three end up in one group), skipping pairs marked as
-// different. Only groups of 2+ are returned, each sorted by name, groups
-// ordered by their first name.
-export function findDuplicateGroups(restaurants) {
-  const profiles = restaurants.map(profileOf);
-  const parent = restaurants.map((_, i) => i);
-  const find = (i) => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+// Same address: both addresses (with house number) agree; if either has
+// none, both positions within SAME_ADDRESS_METERS. With two different
+// addresses the positions don't count — neighbouring shops can be 10 m
+// apart.
+const SAME_ADDRESS_METERS = 20;
 
+function sameAddress(p, q) {
+  if (p.address && q.address) return p.address === q.address;
+  return Boolean(p.coords && q.coords) && distanceMeters(p.coords, q.coords) <= SAME_ADDRESS_METERS;
+}
+
+// The duplicates list's categories (CLAUDE.md Section 9.8), strongest first.
+export const DUPLICATE_SECTIONS = [
+  { key: "same", title: "Similar name, same address", hint: "almost certainly the same" },
+  { key: "address", title: "Same address, different name", hint: "quite likely the same" },
+  { key: "elsewhere", title: "Similar name, different address", hint: "probably different, e.g. branches of a chain" },
+  { key: "unknown", title: "Similar name, no location to compare", hint: "check them" },
+];
+
+// Which category a pair of restaurants belongs to, or null.
+function pairCategory(p, q) {
+  const samePlace =
+    (p.url && p.url === q.url) || (p.placeKey && p.placeKey === q.placeKey) || (p.osm && p.osm === q.osm);
+  const differentKnownPlaces =
+    (p.placeKey && q.placeKey && p.placeKey !== q.placeKey) || (p.osm && q.osm && p.osm !== q.osm);
+  const similar = wordSetsMatch(p.words, q.words);
+  const address = sameAddress(p, q);
+  if (samePlace || (similar && address)) return "same";
+  if (address && !differentKnownPlaces) return "address";
+  if (!similar) return null;
+  const located = (x) => Boolean(x.coords || x.address);
+  return located(p) && located(q) ? "elsewhere" : "unknown";
+}
+
+// For the "Show possible duplicates" view: [{ key, title, hint, groups }]
+// in DUPLICATE_SECTIONS order, only non-empty ones. Within a category,
+// restaurants are grouped transitively (A~B and B~C → one group); a
+// restaurant can appear in more than one category. Pairs marked as
+// different are skipped. Groups are sorted by name.
+export function findDuplicateSections(restaurants) {
+  const profiles = restaurants.map(profileOf);
+  const pairsByCategory = new Map(DUPLICATE_SECTIONS.map(({ key }) => [key, []]));
   for (let i = 0; i < restaurants.length; i++) {
     for (let j = i + 1; j < restaurants.length; j++) {
-      if (compareProfiles(profiles[i], profiles[j]) && !markedDifferent(restaurants[i], restaurants[j])) {
-        parent[find(i)] = find(j);
-      }
+      if (markedDifferent(restaurants[i], restaurants[j])) continue;
+      const category = pairCategory(profiles[i], profiles[j]);
+      if (category) pairsByCategory.get(category).push([i, j]);
     }
   }
 
-  const groups = new Map();
-  restaurants.forEach((r, i) => {
-    const root = find(i);
-    if (!groups.has(root)) groups.set(root, []);
-    groups.get(root).push(r);
-  });
-
   const byName = (a, b) => (a.name || "").localeCompare(b.name || "");
-  return [...groups.values()]
-    .filter((g) => g.length > 1)
-    .map((g) => g.sort(byName))
-    .sort((a, b) => byName(a[0], b[0]));
+  const groupsOf = (pairs) => {
+    const parent = new Map();
+    const find = (i) => {
+      if (!parent.has(i)) parent.set(i, i);
+      const p = parent.get(i);
+      if (p === i) return i;
+      const root = find(p);
+      parent.set(i, root);
+      return root;
+    };
+    for (const [i, j] of pairs) parent.set(find(i), find(j));
+    const groups = new Map();
+    for (const i of parent.keys()) {
+      const root = find(i);
+      if (!groups.has(root)) groups.set(root, []);
+      groups.get(root).push(restaurants[i]);
+    }
+    return [...groups.values()].map((g) => g.sort(byName)).sort((a, b) => byName(a[0], b[0]));
+  };
+
+  return DUPLICATE_SECTIONS.map((section) => ({ ...section, groups: groupsOf(pairsByCategory.get(section.key)) })).filter(
+    (section) => section.groups.length > 0
+  );
 }

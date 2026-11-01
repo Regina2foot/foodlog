@@ -973,9 +973,114 @@ tbody tr:hover {
   gap: 0.35rem;
 }
 
-/* Import/Export tab: the export part below the import. */
-#export-panel {
-  margin-top: 1.5rem;
-  padding-top: 0.5rem;
-  border-top: 1px solid var(--border);
+/* Settings: one collapsible section per topic (native <details>). */
+.settings-section {
+  margin: 0.5rem 0;
+  padding: 0 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.settings-section > summary {
+  padding: 0.65rem 0;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.settings-section[open] {
+  padding-bottom: 0.75rem;
+}
+
+.app-version {
+  margin-top: 1rem;
+}
+
+.import-tag-label {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.import-tag-label input {
+  display: block;
+  width: 100%;
+  margin-top: 0.25rem;
+  padding: 0.4rem;
+  font-size: 1rem;
+  font-weight: normal;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+}
+
+/* The native file input is hidden (its button text follows the phone's
+   language); this label opens it instead. */
+.visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.file-pick {
+  margin: 0.5rem 0;
+}
+
+.file-btn {
+  display: inline-block;
+  padding: 0.35rem 0.8rem;
+  border: 1px solid ButtonBorder;
+  border-radius: 6px;
+  background: ButtonFace;
+  color: ButtonText;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.file-pick input:focus-visible + .file-btn {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Duplicates view: one heading row per category. */
+#restaurant-table .list-section-heading td {
+  padding-top: 0.9rem;
+  font-weight: 600;
+  font-size: 0.85rem;
+  border-bottom: 2px solid var(--border);
+}
+
+.map-popup-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+/* The map's ◎ "show my location" button, styled like Leaflet's zoom buttons. */
+.map-locate-btn {
+  display: block;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: #fff;
+  color: #333;
+  font-size: 18px;
+  line-height: 30px;
+  cursor: pointer;
+}
+
+.city-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+}
+
+.city-filter select {
+  max-width: 12rem;
 }

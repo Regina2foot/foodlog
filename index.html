@@ -26,7 +26,6 @@
   <button type="button" class="tab" role="tab" data-tab="map" aria-selected="false">Map</button>
   <button type="button" class="tab" role="tab" data-tab="new" aria-selected="false" aria-label="New rating">New</button>
   <button type="button" class="tab" role="tab" data-tab="settings" aria-selected="false">Settings</button>
-  <button type="button" class="tab" role="tab" data-tab="import" aria-selected="false">Import/Export</button>
 </nav>
 
 <div id="status-message" class="hint status-line" role="status"></div>
@@ -54,7 +53,12 @@
           </select>
         </label>
         <button type="button" id="btn-sort-dir" data-dir="desc">↓</button>
+        <button type="button" id="btn-update-location" title="Update my location" aria-label="Update my location" hidden>◎</button>
       </div>
+      <label class="city-filter" id="city-filter-label" hidden>
+        City
+        <select id="city-filter"></select>
+      </label>
       <label class="checkbox-label">
         <input type="checkbox" id="show-duplicates" />
         Show possible duplicates
@@ -157,98 +161,119 @@
 <section class="tab-panel" data-tab-panel="settings" hidden>
   <div id="settings-panel">
     <h2>Settings</h2>
-    <p class="hint">
-      These values are stored only in this browser (localStorage) and are never
-      sent anywhere except to the GitHub API for the data repo you configure below.
-    </p>
-    <p class="hint">
-      For the data repo, enter <code>owner/repo</code> or simply paste the
-      repo's GitHub link (a clone URL works too) — the app works out the
-      owner and name. Use the same repo on every device.
-    </p>
-    <form id="settings-form">
-      <label>
-        Data repo
-        <input type="text" id="setting-data-repo" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="owner/repo or https://github.com/owner/repo" />
-      </label>
-      <label>
-        Personal access token
-        <input type="password" id="setting-token" autocomplete="off" placeholder="fine-grained PAT" />
-      </label>
-      <p id="settings-status" class="hint"></p>
-      <p id="app-version" class="hint"></p>
-      <div class="form-actions">
-        <button type="submit">Save settings</button>
-        <button type="button" id="btn-remove-token">Remove token</button>
-      </div>
-    </form>
-    <h3>Archive</h3>
-    <label class="checkbox-label">
-      <input type="checkbox" id="setting-show-archived" />
-      Show archived (closed) restaurants as a third list
-    </label>
-    <p class="hint">
-      Archive a closed restaurant via its page → Edit restaurant → Archive.
-      Archived ones keep all their visits but never show on the map, and only
-      appear in the list when this is ticked.
-    </p>
-    <h3>Tags</h3>
-    <p class="hint">
-      Rename or delete a tag on all restaurants at once. Renaming a tag to
-      one that already exists merges the two.
-    </p>
-    <div id="tag-manager"></div>
-    <h3>History</h3>
-    <p class="hint">
-      Every save is kept as a version in your data repo. Look at the state
-      before any save to bring back restaurants that were deleted since.
-    </p>
-    <div id="history-panel"></div>
-  </div>
-</section>
 
-<section class="tab-panel" data-tab-panel="import" hidden>
-  <div id="import-panel">
-    <h2>Import from Google Maps</h2>
-    <p class="hint">
-      Google doesn't offer a way to read your saved Maps lists directly, so
-      this uses Google's own data export instead. Everything here runs in
-      your browser — the file never leaves your device except as new entries
-      written to your data repo.
-    </p>
-    <ol class="hint import-steps">
-      <li>Go to <code>takeout.google.com</code> and sign in.</li>
-      <li>Click "Deselect all", then tick <strong>Saved</strong>.</li>
-      <li>Export once, then open the link Google emails you and download it.</li>
-      <li>Unzip it — inside you'll find one CSV file per Google Maps list you have.</li>
-      <li>Pick the CSV for the list you want below.</li>
-    </ol>
-    <p class="hint">
-      Each place becomes a wishlist place, unless its note starts with a
-      rating like "7/10" (common if you've been noting your own ratings in
-      Google Maps already) — those import as rated visits instead, with the
-      rating converted to 0–5 stars: 0–5/10 → 0 stars, then 6/10 → 1 star up
-      to 10/10 → 5 stars. You'll see a summary before anything is saved.
-    </p>
-    <label>
-      Tag these imports with (optional)
-      <input type="text" id="import-tag-input" placeholder="e.g. Gregors recommendations" />
-    </label>
-    <p class="hint">
-      Auto-filled from the CSV's filename once you pick one below — edit or
-      clear it first if you want something different.
-    </p>
-    <input type="file" id="import-file-input" accept=".csv,text/csv" />
-    <p id="import-status" class="hint"></p>
-    <div id="import-review" hidden></div>
-  </div>
-  <div id="export-panel">
-    <h2>Export</h2>
-    <p class="hint">
-      Downloads everything currently loaded as a CSV file (one row per visit),
-      e.g. to open in a spreadsheet. Nothing is sent anywhere.
-    </p>
-    <button id="btn-export-csv" type="button">Download CSV</button>
+    <details class="settings-section" id="section-repo">
+      <summary>Data repo &amp; token</summary>
+      <p class="hint">
+        These values are stored only in this browser (localStorage) and are never
+        sent anywhere except to the GitHub API for the data repo you configure below.
+      </p>
+      <p class="hint">
+        For the data repo, enter <code>owner/repo</code> or simply paste the
+        repo's GitHub link (a clone URL works too) — the app works out the
+        owner and name. Use the same repo on every device.
+      </p>
+      <form id="settings-form">
+        <label>
+          Data repo
+          <input type="text" id="setting-data-repo" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="owner/repo or https://github.com/owner/repo" />
+        </label>
+        <label>
+          Personal access token
+          <input type="password" id="setting-token" autocomplete="off" placeholder="fine-grained PAT" />
+        </label>
+        <p id="settings-status" class="hint"></p>
+        <div class="form-actions">
+          <button type="submit">Save settings</button>
+          <button type="button" id="btn-remove-token">Remove token</button>
+        </div>
+      </form>
+    </details>
+
+    <details class="settings-section" id="section-import">
+      <summary>Import from Google Maps</summary>
+      <div id="import-panel">
+        <p class="hint">
+          Google doesn't offer a way to read your saved Maps lists directly, so
+          this uses Google's own data export instead. Everything here runs in
+          your browser — the file never leaves your device except as new entries
+          written to your data repo.
+        </p>
+        <ol class="hint import-steps">
+          <li>Go to <code>takeout.google.com</code> and sign in.</li>
+          <li>Click "Deselect all", then tick <strong>Saved</strong>.</li>
+          <li>Export once, then open the link Google emails you and download it.</li>
+          <li>Unzip it — inside you'll find one CSV file per Google Maps list you have.</li>
+          <li>Pick the CSV for the list you want below.</li>
+        </ol>
+        <p class="hint">
+          Each place becomes a wishlist place, unless its note starts with a
+          rating like "7/10" (common if you've been noting your own ratings in
+          Google Maps already) — those import as rated visits instead, with the
+          rating converted to 0–5 stars: 0–5/10 → 0 stars, then 6/10 → 1 star up
+          to 10/10 → 5 stars. You'll see a summary before anything is saved.
+        </p>
+        <label class="import-tag-label">
+          Tag these imports with (optional)
+          <input type="text" id="import-tag-input" placeholder="e.g. Gregors recommendations" />
+        </label>
+        <p class="hint">
+          Auto-filled from the CSV's filename once you pick one below — edit or
+          clear it first if you want something different.
+        </p>
+        <!-- The browser's own file button is labelled in the phone's language,
+             so it's hidden and replaced by an English one. -->
+        <div class="file-pick">
+          <input type="file" id="import-file-input" class="visually-hidden" accept=".csv,text/csv" />
+          <label for="import-file-input" class="file-btn">Choose CSV file…</label>
+        </div>
+        <p id="import-status" class="hint"></p>
+        <div id="import-review" hidden></div>
+      </div>
+    </details>
+
+    <details class="settings-section" id="section-export">
+      <summary>Export (CSV)</summary>
+      <p class="hint">
+        Downloads everything currently loaded as a CSV file (one row per visit),
+        e.g. to open in a spreadsheet or keep as an extra copy. Nothing is sent
+        anywhere.
+      </p>
+      <button id="btn-export-csv" type="button">Download CSV</button>
+    </details>
+
+    <details class="settings-section" id="section-archive">
+      <summary>Archive</summary>
+      <label class="checkbox-label">
+        <input type="checkbox" id="setting-show-archived" />
+        Show archived (closed) restaurants as a third list
+      </label>
+      <p class="hint">
+        Archive a closed restaurant via its page → Edit restaurant → Archive.
+        Archived ones keep all their visits but never show on the map, and only
+        appear in the list when this is ticked.
+      </p>
+    </details>
+
+    <details class="settings-section" id="section-tags">
+      <summary>Tags</summary>
+      <p class="hint">
+        Rename or delete a tag on all restaurants at once. Renaming a tag to
+        one that already exists merges the two.
+      </p>
+      <div id="tag-manager"></div>
+    </details>
+
+    <details class="settings-section" id="section-history">
+      <summary>History</summary>
+      <p class="hint">
+        Every save is kept as a version in your data repo. Look at the state
+        before any save to bring back restaurants that were deleted since.
+      </p>
+      <div id="history-panel"></div>
+    </details>
+
+    <p id="app-version" class="hint app-version"></p>
   </div>
 </section>
 

@@ -21,9 +21,28 @@ let map = null;
 let markerLayer = null;
 let resultLayer = null;
 let candidateLayer = null;
+let userLayer = null;
 let hasFitted = false;
 const markersById = new Map();
 let clickHandler = null;
+let locateHandler = null;
+
+// "◎" button under the zoom buttons: shows the user's own position. Only a
+// tap asks for it (location.js); the map never does so on its own.
+const LocateControl = L.Control.extend({
+  options: { position: "topleft" },
+  onAdd() {
+    const bar = L.DomUtil.create("div", "leaflet-bar leaflet-control");
+    const button = L.DomUtil.create("button", "map-locate-btn", bar);
+    button.type = "button";
+    button.textContent = "◎";
+    button.title = "Show my location";
+    button.setAttribute("aria-label", "Show my location");
+    L.DomEvent.disableClickPropagation(bar);
+    L.DomEvent.on(button, "click", () => locateHandler && locateHandler());
+    return bar;
+  },
+});
 
 function ensureMap(container) {
   if (map) return;
@@ -32,11 +51,13 @@ function ensureMap(container) {
   markerLayer = L.layerGroup().addTo(map);
   resultLayer = L.layerGroup().addTo(map);
   candidateLayer = L.layerGroup().addTo(map);
+  userLayer = L.layerGroup().addTo(map);
+  new LocateControl().addTo(map);
   map.setView([20, 0], 2);
   map.on("click", (e) => clickHandler && clickHandler(e.latlng.lat, e.latlng.lng));
 }
 
-function buildPopup(restaurant, tagColors, onOpen) {
+function buildPopup(restaurant, tagColors, onOpen, onNavigate) {
   const box = document.createElement("div");
   box.className = "map-popup";
   const name = document.createElement("strong");
@@ -51,7 +72,15 @@ function buildPopup(restaurant, tagColors, onOpen) {
   open.type = "button";
   open.textContent = "Open";
   open.addEventListener("click", () => onOpen(restaurant.id));
-  box.appendChild(open);
+  // Directions in Google Maps (just a link; the app calls no Google service).
+  const navigate = document.createElement("button");
+  navigate.type = "button";
+  navigate.textContent = "Navigate";
+  navigate.addEventListener("click", () => onNavigate(restaurant));
+  const actions = document.createElement("div");
+  actions.className = "map-popup-actions";
+  actions.append(open, navigate);
+  box.appendChild(actions);
   return box;
 }
 
@@ -86,7 +115,7 @@ function pieIcon(restaurant, tagColors) {
 // the map's container is visible (Leaflet needs its size). On the first
 // call with any markers, zooms to fit them; afterwards the view is left as
 // the user set it. Returns how many restaurants are shown.
-export function renderMap(container, restaurants, { tagColors, onOpenRestaurant }) {
+export function renderMap(container, restaurants, { tagColors, onOpenRestaurant, onNavigateRestaurant }) {
   ensureMap(container);
   map.invalidateSize();
   markerLayer.clearLayers();
@@ -95,7 +124,7 @@ export function renderMap(container, restaurants, { tagColors, onOpenRestaurant 
   const located = restaurants.filter(hasLocation);
   for (const r of located) {
     const marker = L.marker([r.lat, r.lng], { icon: pieIcon(r, tagColors), title: r.name })
-      .bindPopup(() => buildPopup(r, tagColors, onOpenRestaurant))
+      .bindPopup(() => buildPopup(r, tagColors, onOpenRestaurant, onNavigateRestaurant))
       .addTo(markerLayer);
     markersById.set(r.id, marker);
   }
@@ -106,6 +135,33 @@ export function renderMap(container, restaurants, { tagColors, onOpenRestaurant 
     hasFitted = true;
   }
   return located.length;
+}
+
+// Called when the ◎ button is tapped.
+export function onLocate(handler) {
+  locateHandler = handler;
+}
+
+// The user's position: a blue dot with a faint circle for its accuracy.
+// Not tappable (taps go to the map underneath). Centres on it if asked.
+export function showUserPosition({ lat, lng, accuracy }, { center = false } = {}) {
+  if (!map) return;
+  userLayer.clearLayers();
+  if (Number.isFinite(accuracy) && accuracy > 0) {
+    L.circle([lat, lng], { radius: accuracy, interactive: false, color: "#1a73e8", weight: 1, fillOpacity: 0.1 }).addTo(userLayer);
+  }
+  L.circleMarker([lat, lng], {
+    radius: 7,
+    interactive: false,
+    color: "#ffffff",
+    weight: 2,
+    fillColor: "#1a73e8",
+    fillOpacity: 1,
+  }).addTo(userLayer);
+  if (center) {
+    hasFitted = true;
+    map.setView([lat, lng], Math.max(map.getZoom(), 15));
+  }
 }
 
 // Called with (lat, lng) whenever the map itself (not a marker) is tapped.

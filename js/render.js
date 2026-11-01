@@ -194,9 +194,12 @@ function cell(className, content) {
 // Rewrites the table header row for the current list view mode. The first
 // column is a "select all visible rows" checkbox; `allSelected` reflects
 // whether every currently-visible row is already selected.
-export function renderListHeader(headerRow, mode = "visited", onToggleSelectAll, allSelected = false) {
+// `showDistance`: the date column shows the distance to the user instead.
+export function renderListHeader(headerRow, mode = "visited", onToggleSelectAll, allSelected = false, { showDistance = false } = {}) {
   headerRow.textContent = "";
-  const columns = mode === "wishlist" ? WISHLIST_COLUMNS : VISITED_COLUMNS;
+  const columns = (mode === "wishlist" ? WISHLIST_COLUMNS : VISITED_COLUMNS).map((c) =>
+    showDistance && c.className === "col-date" ? { ...c, label: "Distance" } : c
+  );
   columns.forEach(({ label, className }, idx) => {
     const th = document.createElement("th");
     th.className = className;
@@ -220,8 +223,11 @@ export function renderListHeader(headerRow, mode = "visited", onToggleSelectAll,
 // `mode` ("visited" | "wishlist" | "duplicates") selects which columns to show.
 // `onToggleSelect(id, checked)` fires from each row's checkbox;
 // `selectedKeys` (a Set of restaurant ids) sets each checkbox's initial state.
-// Options: `groupStartKeys` marks rows that start a new duplicate group
-// (drawn with a separator); `emptyMessage` overrides the empty-list text.
+// Options (by row index, since in the duplicates view a restaurant can
+// appear more than once): `groupStarts` marks rows that start a new group
+// (drawn with a separator); `headings` (index → text) puts a heading row
+// above that row. `emptyMessage` overrides the empty-list text;
+// `showDistance` shows `distanceKm` instead of the date.
 export function renderRestaurantList(
   tbody,
   restaurants,
@@ -229,7 +235,7 @@ export function renderRestaurantList(
   mode = "visited",
   onToggleSelect,
   selectedKeys,
-  { groupStartKeys = new Set(), emptyMessage, tagColors = new Map() } = {}
+  { groupStarts = new Set(), headings = new Map(), emptyMessage, tagColors = new Map(), showDistance = false } = {}
 ) {
   tbody.textContent = "";
 
@@ -245,10 +251,20 @@ export function renderRestaurantList(
     return;
   }
 
-  for (const restaurant of restaurants) {
+  const columnCount = mode === "wishlist" ? WISHLIST_COLUMNS.length : VISITED_COLUMNS.length;
+  restaurants.forEach((restaurant, index) => {
+    if (headings.has(index)) {
+      const headingRow = document.createElement("tr");
+      headingRow.className = "list-section-heading";
+      const td = document.createElement("td");
+      td.colSpan = columnCount;
+      td.textContent = headings.get(index);
+      headingRow.appendChild(td);
+      tbody.appendChild(headingRow);
+    }
     const row = document.createElement("tr");
     row.tabIndex = 0;
-    if (groupStartKeys.has(restaurant.id)) row.classList.add("dup-group-start");
+    if (groupStarts.has(index)) row.classList.add("dup-group-start");
 
     const checkbox = document.createElement("input");
     checkbox.type = "checkbox";
@@ -263,13 +279,13 @@ export function renderRestaurantList(
     if (mode === "wishlist") {
       row.append(
         cell("col-tags", buildTagDots(tags, tagColors)),
-        cell("col-date", formatDate(restaurant.created_at))
+        cell("col-date", showDistance ? formatDistance(restaurant.distanceKm) : formatDate(restaurant.created_at))
       );
     } else {
       row.append(
         cell("col-rating", buildStarsDisplay(latest ? latest.rating : null)),
         cell("col-tags", buildTagDots(tags, tagColors)),
-        cell("col-date", formatDate(latest?.visited_at)),
+        cell("col-date", showDistance ? formatDistance(restaurant.distanceKm) : formatDate(latest?.visited_at)),
         cell("col-comment", latest?.comment || restaurant.note || "")
       );
     }
@@ -282,7 +298,14 @@ export function renderRestaurantList(
       }
     });
     tbody.appendChild(row);
-  }
+  });
+}
+
+// "350 m", "2.4 km", "12 km"; "–" when unknown (no location).
+export function formatDistance(km) {
+  if (!Number.isFinite(km)) return "–";
+  if (km < 1) return `${Math.max(10, Math.round((km * 1000) / 10) * 10)} m`;
+  return km < 10 ? `${km.toFixed(1)} km` : `${Math.round(km)} km`;
 }
 
 export function buildTagDot(tag, colors) {

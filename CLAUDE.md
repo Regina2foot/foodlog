@@ -91,6 +91,11 @@ before considering the step done.
     while typing, results not re-requested unnecessarily
 - The app's own site (GitHub Pages, same origin) is also contacted, e.g.
   for the update check (Section 9.14) — not an external service
+- **The user's own location** (browser Geolocation API, 2026-11): asked
+  for only when the user taps something that needs it (the map's ◎
+  button, or sorting the list by distance) — never automatically. Kept in
+  memory for the session only, never stored and never sent anywhere; used
+  only to draw the blue dot and compute distances (`location.js`)
 - The personal GitHub token is stored only locally in the browser
   (`localStorage`), never transmitted anywhere else, and never displayed
   in plain text anywhere (except in its own input field while typing it)
@@ -231,6 +236,8 @@ extensions are easy, rather than requiring larger rewrites.
     be confused with `maps.js` (Google link handling)
   - `geo.js` — place search / "what's here?" lookups via Nominatim,
     rate-limited and cached, plus the address fallbacks (Section 9.6)
+  - `location.js` — the user's own position, only on request (Section
+    3.1, 9.5)
   - `locate.js`, `locateView.js` — "Find locations": matching logic (no
     DOM) and the Map-tab panel (Section 9.7)
   - `restoreView.js` — Settings → History (Section 9.13)
@@ -269,7 +276,7 @@ extensions are easy, rather than requiring larger rewrites.
       generates their own token — how exactly depends on the open
       question in Section 10
 - [x] **Transfer the existing Google Maps list**: superseded — this is now
-      a permanent in-app feature (Import/Export tab), not a one-off
+      a permanent in-app feature (Settings → Import), not a one-off
       script. See Section 9.11.
 
 **Note for Claude Code**: this checklist is for me to work through
@@ -391,7 +398,7 @@ save):
   fit instead
 - Header: logo and a ↻ refresh icon (inline SVG, no icon library).
   Tabs, one screen at a time: **List** (start tab) · **Map** · **New** ·
-  **Settings** · **Import/Export**. A status line under the tab bar is
+  **Settings** (import and export live there, 9.13). A status line under the tab bar is
   visible on every tab; an update banner appears there when needed (9.14)
 - **Phone back button**: the list is the "home" history entry; opening a
   restaurant or another tab adds exactly one entry (further navigation
@@ -412,14 +419,27 @@ save):
   visit's date), and on screens ≥640px the latest comment (or the
   restaurant's note). Wishlist — select, name, tags, "Added" (created_at)
 - Sorting per view, each remembered while the app is open: Rated by
-  rating (default, best first) / name / date; Wishlist by name (default
-  A→Z) / date added; Archived by name (default) / rating / date
+  rating (default, best first) / name / date / distance; Wishlist by name
+  (default A→Z) / date added / distance; Archived by name (default) /
+  rating / date / distance
+- **Distance** sort (2026-11): nearest first; choosing it is the tap that
+  asks for the user's position (`location.js`) if there's none yet. The
+  date column then shows the distance ("350 m", "2.4 km"); restaurants
+  without a location go last. A small ◎ next to the sort updates the
+  position
+- **City filter** (2026-11): a dropdown "All cities / <city> (n) / No city
+  known (n)", only shown when the current view has more than one; the
+  city comes from the stored address (`cityOf` in `data.js`: the last part
+  before the country without digits — addresses come from Nominatim in
+  the form "Street 12, City, Country"). Combines with the tag filter and
+  name search; hidden in the duplicates view
 - **Tag filter**: a row of chips (one tag at a time, only tags in the
   current view); the chips double as the colour legend
 - **Name search** above the list: filters by restaurant name while typing,
   ignoring case and accents; Enter just closes the keyboard
 - **"Show possible duplicates"** switch: only suspected duplicates, across
-  Rated and Wishlist (and Archived), grouped next to each other (9.8)
+  Rated and Wishlist (and Archived), in the four categories of 9.8, each
+  under a heading, groups separated by a line
 - **Bulk actions** on ticked rows (checkbox per row + "select all
   visible"; the selection clears whenever the visible set changes):
   **Tags… (n)** (9.9), **Merge selected** (2+, confirmation),
@@ -490,8 +510,14 @@ save):
   (same order as the list's tag dots; grey without tags); rated = solid,
   wishlist = ring with a white middle (`L.divIcon` + CSS
   `conic-gradient`; colours are computed values, never user text). Tap →
-  popup: name, stars, tag dots, **Open** (→ restaurant page). Tapping a
-  marker never triggers a map-tap lookup
+  popup: name, stars, tag dots, **Open** (→ restaurant page) and
+  **Navigate** (Google Maps directions to the marker's exact position,
+  `googleDirectionsUrl`; just a link). Tapping a marker never triggers a
+  map-tap lookup
+- **Own location** (2026-11): a **◎** button under the zoom buttons asks
+  for the position (only then, Section 3.1) and shows it as a blue dot
+  with a faint accuracy circle, centring the map on it. The dot stays
+  while the app is open (also updated by the list's distance sort)
 - **Filters** (kept while the app is open; `matchesMapFilter` in
   `sort.js`), two horizontally scrolling chip rows: rating chips **All ·
   5★ · 4★ · 3★ · 2★ · 1★ · 0★ · Wishlist** — any combination, judged by
@@ -600,23 +626,41 @@ save):
 
 ### 9.8 Duplicate detection (`duplicates.js`, pure functions)
 
-- Three strengths, strongest first:
+- Building blocks:
   - **same place**: identical Google link, the same Google place ID in two
     different long links (`!1s0x…:0x…`, `ftid=`, `?cid=` — all normalized
     to the CID), or the same `osm` reference. Reliable
-  - **similar name, same spot**: similar name and within 60 m
   - **similar name**: compares the important words, ignoring case,
     accents, punctuation, apostrophes and generic words (Restaurant, Café,
     Bar, Pizzeria, Trattoria, articles…): every important word of the
     shorter name must appear in the other, in any order, with a small typo
     tolerated in longer words (1 edit from 5 letters, 2 from 8); fewer
-    than 4 important letters never match. Only a hint
-- Never a match: both have Google place IDs (or both `osm`) that differ;
-  more than 300 m apart; pairs marked different (`not_same_as`)
+    than 4 important letters never match
+  - **same address** (2026-11): both stored addresses agree once
+    normalized, without the country — only counted when the street part
+    has a house number ("Street, City" alone would match a whole street);
+    if either has no address, both positions within 20 m. With two
+    *different* addresses positions don't count (neighbouring shops can
+    be 10 m apart)
+- **Duplicates list** (`findDuplicateSections`, 2026-11), four categories
+  in this order, each pair in exactly one:
+  a) **similar name, same address** (or same place) — almost certainly
+  the same; b) **same address, different name** — quite likely the same
+  (not when both have different Google place IDs / `osm`, i.e. two known
+  venues in one building); c) **similar name, different address** —
+  probably different, e.g. branches of a chain; d) **similar name, no
+  location to compare**. Within a category, matches are grouped
+  transitively; a restaurant can appear in more than one category
+- **Warnings on create (9.3) and in the import (9.11)** use the older
+  matcher (`createMatcher`) and stay as they were (decided 2026-11 — "same
+  address, different name" would be noise there, e.g. food courts):
+  *same place*; *similar name, same spot* (within 60 m); *similar name*
+  (only a hint) — never when both have different Google place IDs (or
+  both `osm`) or are more than 300 m apart
+- Never a match anywhere: pairs marked different (`not_same_as`)
 - Short share links (`maps.app.goo.gl/…`) carry no place ID and can't be
   resolved without contacting Google, so they only match by name
-- Used on create (9.3), in the import (9.11) and in the "Show possible
-  duplicates" list view (9.2). Nothing is ever merged automatically
+- Nothing is ever merged automatically
 
 ### 9.9 Tags
 
@@ -659,8 +703,10 @@ save):
 ### 9.11 Import from Google Maps (`googleImport.js`)
 
 - Google offers no API for saved lists, so the import takes a Google
-  Takeout "Saved" export: one CSV per Maps list, picked in the
-  Import/Export tab (step-by-step instructions shown there). Parsed
+  Takeout "Saved" export: one CSV per Maps list, picked in Settings →
+  Import from Google Maps (step-by-step instructions shown there; the file
+  button is the app's own English "Choose CSV file…", because the
+  browser's native one follows the phone's language). Parsed
   entirely in the browser
 - Handles both delimiters (";" and ","), German or English headers
   (`Titel/Notiz/URL/Tags/Kommentar` vs. `Title/Note/URL/Tags/Comment`)
@@ -690,7 +736,7 @@ save):
 
 ### 9.12 CSV export
 
-- Import/Export tab → **Download CSV**: everything loaded, built in the
+- Settings → Export (CSV) → **Download CSV**: everything loaded, built in the
   browser, nothing sent anywhere. One row per visit with the restaurant's
   fields; one row per wishlist restaurant with empty visit columns.
   Columns: restaurant, address, lat, lng, google_maps_url, tags (";"-
@@ -698,6 +744,11 @@ save):
 
 ### 9.13 Settings, History and restore
 
+- Settings is a list of collapsible sections (native `<details>`, 2026-11),
+  all closed except "Data repo & token" while that isn't filled in:
+  **Data repo & token** · **Import from Google Maps** (9.11) · **Export
+  (CSV)** (9.12) · **Archive** · **Tags** · **History**; the app version
+  below them
 - **Data repo** (one field accepting `owner/repo`, a GitHub page link or a
   clone URL — `parseRepoInput`; unparseable input is rejected; stored as
   separate owner/repo values) and **Personal access token**; both trimmed,
@@ -705,7 +756,7 @@ save):
   `foodlog_token`), with a note saying so. **Remove token** clears it. A
   401 shows "token rejected — paste it again". A missing data *repo* is an
   error (so a typo never looks like an empty list); a missing *file* is a
-  normal fresh start. The app version is shown at the bottom
+  normal fresh start
 - **Archive** checkbox (9.10) and **Tags** (9.9)
 - **History** (`restoreView.js`): every save is a commit in the data repo.
   "Show recent saves" lists them (date, commit message; 30 per page,
@@ -804,6 +855,11 @@ change (ask first).
 - **"Not on OSM" mark** in Find locations — tried and dropped 2026-10;
   such places are placed via Choose on map + pasted address
 - **Exporting to a Google Maps list** — impossible (Section 9.11)
+- **Navigation inside the app** (2026-11) — even drawing a route would
+  need a routing service, a new external service receiving the user's
+  position and destination (the free public ones are for testing only);
+  turn-by-turn would mean rebuilding a navigation app. The map popup's
+  **Navigate** button hands over to Google Maps instead
 
 ### 11.2 Ideas, not planned yet
 
@@ -828,7 +884,8 @@ change (ask first).
   - no `X-GitHub-Api-Version` header: GitHub doesn't allow it in CORS
     preflights, so browsers would block the request
 - Nominatim only through `geo.js` (rate limit, cache — Section 9.6);
-  OSM tiles only through Leaflet's tile layer
+  OSM tiles only through Leaflet's tile layer; the device position only
+  through `location.js` (Geolocation API, needs HTTPS — GitHub Pages is)
 - `localStorage` keys: `foodlog_owner`, `foodlog_repo`, `foodlog_token`,
   `foodlog_locate_area`, `foodlog_show_archived`
 - Local testing: `python3 -m http.server` in the project folder (ES

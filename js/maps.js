@@ -61,3 +61,11 @@ export function googleMapsLinksFor(restaurant) {
   } else if (restaurant.name) found = { url: search(restaurant.name), by: "name" };
   return { search: found, savedLink: isSafeHttpUrl(restaurant.google_maps_url) ? restaurant.google_maps_url : null };
 }
+
+// Google Maps directions to the restaurant's exact position on our map
+// (just a link to open; the app itself calls no Google service). Null
+// without a location.
+export function googleDirectionsUrl(restaurant) {
+  if (!Number.isFinite(restaurant.lat) || !Number.isFinite(restaurant.lng)) return null;
+  return `https://www.google.com/maps/dir/?api=1&destination=${restaurant.lat},${restaurant.lng}`;
+}

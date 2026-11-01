@@ -32,11 +32,12 @@ import {
 } from "./settings.js";
 import { fetchDataDoc, saveDataDoc, fetchCurrentUser, fetchDataHistory, fetchDataDocAt, GitHubApiError } from "./api.js";
 import { renderRestaurantDetail } from "./history.js";
-import { openMapsUrl } from "./maps.js";
+import { openMapsUrl, googleDirectionsUrl } from "./maps.js";
 import { restaurantsToCsv, downloadCsv } from "./csv.js";
 import { decodeImportFile, parseGoogleMapsExport, buildImport, applyImport } from "./googleImport.js";
-import { extractPlaceKey, normalizeName, createMatcher, findDuplicateGroups } from "./duplicates.js";
-import { renderMap, onMapTap, visibleArea, focusRestaurant, showSearchResults, showCandidate, clearPicking } from "./mapView.js";
+import { extractPlaceKey, normalizeName, createMatcher, findDuplicateSections, distanceMeters } from "./duplicates.js";
+import { lastPosition, requestPosition } from "./location.js";
+import { renderMap, onMapTap, visibleArea, focusRestaurant, showSearchResults, showCandidate, clearPicking, onLocate, showUserPosition } from "./mapView.js";
 import { searchWithFallbacks, lookupPosition } from "./geo.js";
 import { renderTagManager, renderBulkTagEditor } from "./tagTools.js";
 import { createLocatePanel } from "./locateView.js";
@@ -44,7 +45,7 @@ import { createRestorePanel } from "./restoreView.js";
 
 // Bump on every change that gets pushed, so a device still running a
 // cached older app.js is easy to spot (shown at the bottom of Settings).
-const APP_VERSION = "2026-10-25m";
+const APP_VERSION = "2026-11-01a";
 
 // Phones have no visible error console; surface anything uncaught in the
 // status line instead of failing silently.
@@ -63,20 +64,25 @@ let views = []; // restaurant views (data.js), rebuilt in refreshList()
 // Each list view keeps its own sorting; the options differ because a
 // wishlist place has no visit (so no rating or visit date), only the date
 // it was added.
+// "Distance" (nearest first) needs the user's position, asked for when
+// it's chosen (location.js).
 const SORT_OPTIONS = {
   visited: [
     ["rating", "Rating"],
     ["name", "Name"],
     ["date", "Date"],
+    ["distance", "Distance"],
   ],
   wishlist: [
     ["name", "Name"],
     ["added", "Date added"],
+    ["distance", "Distance"],
   ],
   archived: [
     ["name", "Name"],
     ["rating", "Rating"],
     ["date", "Date"],
+    ["distance", "Distance"],
   ],
 };
 const sortState = {
@@ -87,6 +93,9 @@ const sortState = {
 let currentUser = null;
 let listView = "visited"; // "visited" (Rated) | "wishlist" | "archived"
 let tagFilter = ""; // "" = all tags
+// City filter for the list: "" = all; NO_CITY = restaurants without a known city.
+const NO_CITY = "\u0000none";
+let cityFilter = "";
 let tagColors = new Map(); // tag -> colour, recomputed whenever the list is rendered
 let formTags = []; // New form's current tag selection
 let renamingTag = null; // tag whose rename input is open in Settings
@@ -181,6 +190,9 @@ const els = {
   statusMessage: document.getElementById("status-message"),
   restaurantListBody: document.getElementById("restaurant-list-body"),
   sortFieldSelect: document.getElementById("sort-field"),
+  updateLocationButton: document.getElementById("btn-update-location"),
+  cityFilter: document.getElementById("city-filter"),
+  cityFilterLabel: document.getElementById("city-filter-label"),
   sortDirButton: document.getElementById("btn-sort-dir"),
   refreshButton: document.getElementById("btn-refresh"),
   exportButton: document.getElementById("btn-export-csv"),
@@ -250,14 +262,29 @@ function matchesNameSearch(restaurant) {
 function refreshList() {
   views = buildRestaurantViews(doc);
   tagColors = computeTagColors(doc.restaurants);
+  // Distances only exist once the user has shared their position.
+  const position = lastPosition();
+  if (position) {
+    for (const r of views) if (hasLocation(r)) r.distanceKm = distanceMeters(position, r) / 1000;
+  }
   let sorted;
   let mode;
-  const groupStartKeys = new Set();
+  const groupStarts = new Set();
+  const headings = new Map();
+  let showDistance = false;
 
   if (showDuplicates) {
-    const groups = findDuplicateGroups(views).filter((g) => g.some(matchesNameSearch));
-    groups.forEach((g) => groupStartKeys.add(g[0].id));
-    sorted = groups.flat();
+    // One section per category (duplicates.js), each a run of groups.
+    sorted = [];
+    for (const section of findDuplicateSections(views)) {
+      const groups = section.groups.filter((g) => g.some(matchesNameSearch));
+      if (groups.length === 0) continue;
+      headings.set(sorted.length, `${section.title} — ${section.hint}`);
+      for (const group of groups) {
+        groupStarts.add(sorted.length);
+        sorted.push(...group);
+      }
+    }
     mode = "duplicates";
   } else {
     // Rated = has at least one visit; Wishlist = no visits (Section 8).
@@ -266,15 +293,22 @@ function refreshList() {
       listView === "archived" ? r.isArchived : !r.isArchived && (listView === "wishlist" ? r.isWishlist : !r.isWishlist)
     );
     refreshTagFilter(inView);
-    const filtered = inView.filter((r) => matchesNameSearch(r) && (!tagFilter || r.tags.includes(tagFilter)));
+    refreshCityFilter(inView);
+    const filtered = inView.filter(
+      (r) => matchesNameSearch(r) && (!tagFilter || r.tags.includes(tagFilter)) && matchesCityFilter(r)
+    );
     const { field, dir } = sortState[listView];
     sorted = sortRestaurants(filtered, field, dir);
+    showDistance = field === "distance";
     // The archived view uses the Rated columns (rating, date, comment).
     mode = listView === "archived" ? "visited" : listView;
   }
 
   els.viewToggle.hidden = showDuplicates;
-  if (showDuplicates) els.tagFilterContainer.hidden = true;
+  if (showDuplicates) {
+    els.tagFilterContainer.hidden = true;
+    els.cityFilterLabel.hidden = true;
+  }
 
   const allSelected = sorted.length > 0 && sorted.every((r) => selectedIds.has(r.id));
   renderListHeader(els.restaurantTableHeaderRow, mode, (checked) => {
@@ -283,7 +317,7 @@ function refreshList() {
       else selectedIds.delete(r.id);
     }
     refreshList();
-  }, allSelected);
+  }, allSelected, { showDistance });
 
   renderRestaurantList(
     els.restaurantListBody,
@@ -297,7 +331,9 @@ function refreshList() {
     },
     selectedIds,
     {
-      groupStartKeys,
+      groupStarts,
+      headings,
+      showDistance,
       tagColors,
       emptyMessage:
         nameSearch || tagFilter
@@ -332,7 +368,17 @@ function refreshMap() {
       renderTab("list");
       showDetail(id);
     },
+    onNavigateRestaurant: (restaurant) => {
+      try {
+        openMapsUrl(googleDirectionsUrl(restaurant));
+      } catch (err) {
+        setStatus(els.statusMessage, err.message, true);
+      }
+    },
   });
+  // Keep the blue dot once the user has asked for their position.
+  const position = lastPosition();
+  if (position) showUserPosition(position);
   const total = active.length;
   const filtered = mapFilter.ratings.size > 0 || mapFilter.tags.size > 0;
   els.mapSummary.textContent =
@@ -526,6 +572,7 @@ function updateFormLocationHint() {
 
 function initMapPicking() {
   onMapTap(handleMapTap);
+  onLocate(() => useMyLocation({ centerMap: true }));
   els.mapSearchForm.addEventListener("submit", (e) => {
     e.preventDefault();
     runMapSearch();
@@ -652,6 +699,47 @@ function refreshTagFilter(restaurantsInView) {
     selectedIds.clear();
     refreshList();
   });
+}
+
+// City dropdown (cities from the stored addresses, data.js cityOf). Only
+// shown when the current view has more than one city (or some unknown).
+function matchesCityFilter(r) {
+  if (!cityFilter) return true;
+  return cityFilter === NO_CITY ? !r.city : r.city === cityFilter;
+}
+
+function refreshCityFilter(restaurantsInView) {
+  const counts = new Map();
+  let unknown = 0;
+  for (const r of restaurantsInView) {
+    if (r.city) counts.set(r.city, (counts.get(r.city) || 0) + 1);
+    else unknown++;
+  }
+  const options = [...counts.keys()].sort((a, b) => a.localeCompare(b));
+  if (cityFilter && cityFilter !== NO_CITY && !counts.has(cityFilter)) cityFilter = "";
+  if (cityFilter === NO_CITY && unknown === 0) cityFilter = "";
+  els.cityFilterLabel.hidden = options.length + (unknown ? 1 : 0) < 2;
+  els.cityFilter.textContent = "";
+  els.cityFilter.appendChild(el("option", { value: "", textContent: `All cities (${restaurantsInView.length})` }));
+  for (const city of options) els.cityFilter.appendChild(el("option", { value: city, textContent: `${city} (${counts.get(city)})` }));
+  if (unknown) els.cityFilter.appendChild(el("option", { value: NO_CITY, textContent: `No city known (${unknown})` }));
+  els.cityFilter.value = cityFilter;
+}
+
+// Asks for the user's position (only ever after a tap) and redraws the
+// list and map with it. Returns the position or null.
+async function useMyLocation({ centerMap = false } = {}) {
+  setStatus(els.statusMessage, "Getting your location…");
+  try {
+    const position = await requestPosition();
+    setStatus(els.statusMessage, `Location updated (accurate to about ${Math.round(position.accuracy)} m).`);
+    refreshList();
+    showUserPosition(position, { center: centerMap });
+    return position;
+  } catch (err) {
+    setStatus(els.statusMessage, err.message, true);
+    return null;
+  }
 }
 
 function updateBulkActionButtons() {
@@ -1220,6 +1308,8 @@ function initSettingsPanel() {
     els.dataRepoInput.value = `${current.owner}/${current.repo}`;
   }
   updateSettingsStatus();
+  // Settings sections start closed, except this one while it still needs filling in.
+  if (!hasCompleteSettings()) document.getElementById("section-repo").open = true;
 
   els.settingsForm.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -1398,11 +1488,24 @@ function syncSortControls() {
   els.sortFieldSelect.value = field;
   els.sortDirButton.textContent = dir === "desc" ? "↓" : "↑";
   els.sortDirButton.dataset.dir = dir;
+  els.updateLocationButton.hidden = field !== "distance";
 }
 
 function initSortControls() {
   els.sortFieldSelect.addEventListener("change", () => {
-    sortState[listView].field = els.sortFieldSelect.value;
+    const field = els.sortFieldSelect.value;
+    sortState[listView].field = field;
+    if (field === "distance") {
+      sortState[listView].dir = "asc"; // nearest first
+      // Choosing this sort is the tap that asks for the position.
+      if (!lastPosition()) useMyLocation();
+    }
+    refreshList();
+  });
+  els.updateLocationButton.addEventListener("click", () => useMyLocation());
+  els.cityFilter.addEventListener("change", () => {
+    cityFilter = els.cityFilter.value;
+    selectedIds.clear();
     refreshList();
   });
 
@@ -1482,7 +1585,7 @@ async function init() {
   refreshList();
   checkForAppUpdate();
   if (!hasCompleteSettings()) {
-    setStatus(els.statusMessage, "Set your data repo and token in Settings to sync.");
+    setStatus(els.statusMessage, "Set your data repo and token in Settings → Data repo & token to sync.");
     return;
   }
   await resolveCurrentUser();

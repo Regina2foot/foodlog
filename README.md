@@ -17,7 +17,8 @@ framework.
   images, and **Nominatim** (OpenStreetMap's place search) for searches
   and "what's here?" lookups — only the search text or tapped position is
   sent, never ratings, comments, tags or your token. No analytics, no
-  tracking.
+  tracking. Your own location is only used when you tap ◎ or sort by
+  distance, stays on your device and is never sent anywhere.
 
 ## One-time setup (per person)
 
@@ -43,16 +44,19 @@ token** in Settings to clear it (e.g. on a shared computer).
 ## Using the app
 
 - **List**: one row per restaurant with its latest rating, in **Rated**
-  and **Wishlist** (places you haven't been to yet). Sort, filter by tag,
-  search by name, or show possible duplicates. Tick rows to delete or
+  and **Wishlist** (places you haven't been to yet). Sort (also by
+  distance from you), filter by tag or city, search by name, or show
+  possible duplicates (grouped: same address, similar name, …). Tick rows to delete or
   merge them, or to add/remove tags on all of them at once (**Tags…**).
 - Tap a row for the **restaurant page**: all visits, a rating-over-time
   chart, location, two Google Maps buttons (by address, and by the link
   saved from an import — to compare them), and **Edit restaurant**
   (name, tags, note, archive, delete).
 - **Map**: your restaurants as dots in their tag colours (solid = rated,
-  ring = wishlist); filter by stars and tags. Search a place or paste an
-  address (e.g. from Google Maps), or tap the map, to add one.
+  ring = wishlist); filter by stars and tags; ◎ shows where you are; a
+  restaurant's popup has **Navigate** (directions in Google Maps). Search
+  a place or paste an address (e.g. from Google Maps), or tap the map, to
+  add one.
   **Find locations…** looks up restaurants that have no location yet
   (e.g. after an import) by name in an area you name, like "Berlin" — it
   only places them automatically when the match is unambiguous.
@@ -60,12 +64,11 @@ token** in Settings to clear it (e.g. on a shared computer).
   rating (the meaning of each star is shown) or "haven't been yet". If it
   looks like a restaurant you already have, the app offers to add the
   visit there instead.
-- **Settings**: data repo and token; **Archive** (show closed
-  restaurants as a third list); **Tags** (rename or delete a tag
-  everywhere); **History** (every save is a version — bring back deleted
-  restaurants, or restore a whole older state).
-- **Import/Export**: import a Google Maps list (Google Takeout CSV); below
-  it, **Download CSV** of everything, one row per visit.
+- **Settings** (collapsible sections): data repo and token; **Import from
+  Google Maps** (Google Takeout CSV); **Export** (CSV, one row per visit);
+  **Archive** (show closed restaurants as a third list); **Tags** (rename
+  or delete a tag everywhere); **History** (every save is a version —
+  bring back deleted restaurants, or restore a whole older state).
 - **↻** reloads the data and checks for a new app version.
 
 ## Local development
@@ -96,6 +99,7 @@ Plain HTML/CSS/JavaScript, split into ES modules under `js/`:
 - `tagTools.js` – renaming/deleting tags and the bulk tag panel
 - `mapView.js` – the Map tab (Leaflet + OpenStreetMap tiles)
 - `geo.js` – place search / lookup of a tapped spot (Nominatim)
+- `location.js` – your own position (only when you ask for it)
 - `locate.js`, `locateView.js` – "Find locations" for restaurants without one
 - `restoreView.js` – Settings → History (bring back deleted restaurants)
 - `app.js` – wires the modules together, event handling, entry point

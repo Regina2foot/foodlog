@@ -27,6 +27,16 @@ export function generateId() {
   return crypto.randomUUID().replace(/-/g, "").slice(0, 8);
 }
 
+// The city in an address as the app stores it (Nominatim's "Street 12,
+// City, Country"): the last part before the country that has no digits.
+// Null without a usable address.
+export function cityOf(address) {
+  const parts = (address || "").split(",").map((p) => p.trim()).filter(Boolean);
+  if (parts.length < 2) return null;
+  const named = parts.slice(0, -1).filter((p) => !/\d/.test(p));
+  return named.length ? named[named.length - 1] : null;
+}
+
 export function hasLocation(restaurant) {
   return Number.isFinite(restaurant.lat) && Number.isFinite(restaurant.lng);
 }
@@ -38,6 +48,7 @@ const byNewestVisit = (a, b) =>
 // first, `latest` = most recent visit (null for a wishlist place).
 // `isArchived`: marked as closed (`archived_at` set) — kept for the
 // record, but left out of Rated/Wishlist, the map and Find locations.
+// `city`: from the address (cityOf), for the list's city filter.
 export function buildRestaurantViews(doc) {
   const visitsByRestaurant = new Map();
   for (const visit of doc.visits) {
@@ -53,6 +64,7 @@ export function buildRestaurantViews(doc) {
       latest: visits[0] || null,
       isWishlist: visits.length === 0,
       isArchived: Boolean(r.archived_at),
+      city: cityOf(r.address),
     };
   });
 }

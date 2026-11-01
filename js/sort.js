@@ -1,6 +1,7 @@
 // Pure sorting helpers for the restaurant list. Rating and date use each
 // restaurant's most recent visit (wishlist places have none and sort last);
-// "added" uses when the restaurant itself was added.
+// "added" uses when the restaurant itself was added; "distance" uses
+// `distanceKm` (from the user's position, set by the caller).
 
 function compareBy(getValue, dir) {
   const factor = dir === "asc" ? 1 : -1;
@@ -22,6 +23,13 @@ export function sortRestaurants(restaurants, field, dir = "desc") {
       return list.sort(compareBy((r) => r.latest?.visited_at || "", dir));
     case "added":
       return list.sort(compareBy((r) => r.created_at || "", dir));
+    case "distance": {
+      // `distanceKm` is set by the caller from the user's position;
+      // restaurants without one always go last.
+      const factor = dir === "asc" ? 1 : -1;
+      const known = (r) => Number.isFinite(r.distanceKm);
+      return list.sort((a, b) => known(b) - known(a) || (known(a) ? factor * (a.distanceKm - b.distanceKm) : 0));
+    }
     case "rating":
     default:
       return list.sort(compareBy((r) => r.latest?.rating ?? -1, dir));
