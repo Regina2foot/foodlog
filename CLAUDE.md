@@ -931,7 +931,7 @@ is still fine on a phone) and more people means more write conflicts
 
 ### 10.6 Milestones (commit after each, ask before each push)
 
-1. [ ] This plan, reviewed by the user
+1. [x] This plan, reviewed by the user (2026-11-01)
 2. [ ] Size fix (10.5)
 3. [ ] Two files: Settings fields, reading/writing/merging both, the
        Private/Shared switch, defaults for new entries and imports (works
