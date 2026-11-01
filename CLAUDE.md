@@ -919,20 +919,24 @@ normal saves (undoable via History). Done before inviting anyone.
 The app reads `foodlog.json` through the Contents API, which returns a
 file's content only up to **1 MB**. A restaurant takes ~530 bytes, a
 visit ~270 bytes (pretty-printed), so the limit is around 1,200
-restaurants with as many visits — quickly reached with ~10 people. Fix
-(first milestone): when the Contents API returns the `sha` without
-content, read the file via the Git Blobs API
-(`GET /repos/{owner}/{repo}/git/blobs/{sha}`, up to 100 MB, same token
-and permission) — for the current file and History versions. Writing
-larger files through the Contents API has to be verified while building
-it. Beyond that, every load and save transfers the whole file (a few MB
+restaurants with as many visits — quickly reached with ~10 people.
+**Fixed 2026-11** (`fileText` in `api.js`): when the Contents API returns
+encoding `none` and no content (files over 1 MB), the file is read via
+the Git Blobs API (`GET /repos/{owner}/{repo}/git/blobs/{sha}`, up to
+100 MB, same token and permission) — for the current file and History
+versions. Verified against a public 5 MB file: Contents gives encoding
+`none`, Blobs the full 5,179,756 bytes. **Writing** large files: GitHub
+documents no size limit for `PUT …/contents/…`; not verifiable before a
+real file gets that big (today ~0.3 MB). If saving ever fails at that
+size, the fallback is the Git Data API (create blob → tree → commit →
+move the branch), a bigger change. Beyond that, every load and save transfers the whole file (a few MB
 is still fine on a phone) and more people means more write conflicts
 (handled by the retry, Section 9.15).
 
 ### 10.6 Milestones (commit after each, ask before each push)
 
 1. [x] This plan, reviewed by the user (2026-11-01)
-2. [ ] Size fix (10.5)
+2. [x] Size fix (10.5)
 3. [ ] Two files: Settings fields, reading/writing/merging both, the
        Private/Shared switch, defaults for new entries and imports (works
        before the org exists — the private repo can be tested in the
@@ -990,6 +994,7 @@ is still fine on a phone) and more people means more write conflicts
     base64-encoded UTF-8, with the current `sha`)
   - user: `GET /user`; history: `GET …/commits?path=foodlog.json`,
     `GET …/contents/foodlog.json?ref=<sha>`
+  - files over 1 MB: `GET …/git/blobs/{sha}` (Section 10.5)
   - no `X-GitHub-Api-Version` header: GitHub doesn't allow it in CORS
     preflights, so browsers would block the request
 - Nominatim only through `geo.js` (rate limit, cache — Section 9.6);
@@ -1004,8 +1009,9 @@ is still fine on a phone) and more people means more write conflicts
   (`/System/Library/Frameworks/JavaScriptCore.framework/Versions/Current/Helpers/jsc`)
   — strip `import`/`export` lines, then `checkSyntax(file)` for every
   module, and run pure functions with small test scripts (`print`; async
-  code works). It lacks `URL`/`URLSearchParams`/`fetch`, so tests add
-  tiny stand-ins or fake `searchPlaces`. Also check that every
+  code works). It lacks `URL`/`URLSearchParams`/`fetch`/`TextEncoder`/
+  `TextDecoder` (and `btoa`/`atob`), so tests add tiny stand-ins or fake
+  `searchPlaces`. Also check that every
   `getElementById` id exists once in `index.html` and every imported name
   is exported. Visuals: render an HTML mock-up with the real CSS via
   `qlmanage -t`. Live Nominatim checks only with public landmark

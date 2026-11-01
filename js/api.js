@@ -87,7 +87,7 @@ export async function fetchDataDoc({ owner, repo, token }) {
   }
 
   const data = await response.json();
-  const jsonText = decodeBase64Utf8(data.content);
+  const jsonText = await fileText(data, { owner, repo, token });
   const doc = normalizeDoc(jsonText.trim() === "" ? null : JSON.parse(jsonText));
   return { doc, sha: data.sha, isNew: false };
 }
@@ -152,11 +152,26 @@ export async function fetchDataDocAt({ owner, repo, token }, ref) {
     throw new GitHubApiError(`Failed to read an older version (status ${response.status})`, response.status);
   }
   const data = await response.json();
-  if (!data.content) {
-    throw new GitHubApiError(`That version of ${DATA_FILE} is too large to read here (over 1 MB)`, 0);
-  }
-  const jsonText = decodeBase64Utf8(data.content);
+  const jsonText = await fileText(data, { owner, repo, token });
   return normalizeDoc(jsonText.trim() === "" ? null : JSON.parse(jsonText));
+}
+
+// The text of a file from a Contents API response. The Contents API only
+// includes the content for files up to 1 MB; for bigger ones it returns
+// the blob `sha` with no content (encoding "none"), and the content is
+// read through the Git Blobs API instead (up to 100 MB, same token and
+// permission — CLAUDE.md Section 10.5).
+async function fileText(data, { owner, repo, token }) {
+  if (data.content && data.encoding !== "none") return decodeBase64Utf8(data.content);
+  if (!data.size) return "";
+  const response = await request(`${API_BASE}/repos/${owner}/${repo}/git/blobs/${data.sha}`, {
+    headers: authHeaders(token),
+  });
+  if (!response.ok) {
+    throw new GitHubApiError(`Failed to read the large ${DATA_FILE} (status ${response.status})`, response.status);
+  }
+  const blob = await response.json();
+  return decodeBase64Utf8(blob.content || "");
 }
 
 function encodeBase64Utf8(text) {
