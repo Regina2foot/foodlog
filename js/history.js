@@ -247,6 +247,56 @@ function renderRestaurantForm(restaurant, allTags, tagColors, { onSave, onCancel
   return card;
 }
 
+// "🔒 Private" / "👥 Shared" with the button to switch (Section 10.3). Before
+// sharing, possible duplicates among the shared restaurants are offered:
+// add my visits to one of them, or share it as a separate restaurant.
+function renderVisibility(restaurant, callbacks, ui) {
+  const box = el("div", { className: "visibility-row" });
+  const isPrivate = restaurant.visibility === "private";
+  box.appendChild(
+    el("span", {
+      className: "hint",
+      textContent: isPrivate ? "🔒 Private — only you can see it" : "👥 Shared — your friends can see it",
+    })
+  );
+  if (isPrivate && ui.sharingMatches) {
+    const choices = el("div", { className: "sharing-choices" }, [
+      el("p", { className: "hint", textContent: "A shared restaurant looks like this one. Is it the same?" }),
+    ]);
+    for (const match of ui.sharingMatches) {
+      const same = el("button", { type: "button", textContent: `Same as "${match.name}" — add my visits there` });
+      same.addEventListener("click", () => callbacks.onShareInto(match.id, []));
+      choices.appendChild(same);
+    }
+    const separate = el("button", { type: "button", textContent: "Different — share as a separate restaurant" });
+    separate.addEventListener("click", () =>
+      callbacks.onShareInto(
+        null,
+        ui.sharingMatches.map((m) => m.id)
+      )
+    );
+    const cancel = el("button", { type: "button", textContent: "Cancel" });
+    cancel.addEventListener("click", callbacks.onCancel);
+    choices.append(separate, cancel);
+    box.appendChild(choices);
+    return box;
+  }
+  const toggle = el("button", { type: "button", className: "small-btn", textContent: isPrivate ? "Share with friends" : "Make private" });
+  if (isPrivate) {
+    toggle.addEventListener("click", callbacks.onMakeShared);
+  } else if (callbacks.visibility.canMakePrivate) {
+    toggle.addEventListener("click", callbacks.onMakePrivate);
+  } else {
+    toggle.disabled = true;
+    toggle.title = callbacks.visibility.whyNot || "";
+  }
+  box.appendChild(toggle);
+  if (!isPrivate && !callbacks.visibility.canMakePrivate && callbacks.visibility.whyNot) {
+    box.appendChild(el("span", { className: "hint", textContent: callbacks.visibility.whyNot }));
+  }
+  return box;
+}
+
 // Detail view of one restaurant (CLAUDE.md Section 9.4). `restaurant` is a
 // restaurant view (data.js). `ui` = { editingRestaurant, addingVisit,
 // editingVisitId }. callbacks: onOpenMaps(url), onShowOnMap(),
@@ -255,6 +305,10 @@ function renderRestaurantForm(restaurant, allTags, tagColors, { onSave, onCancel
 // onAddVisit(),
 // onSaveNewVisit(fields), onEditVisit(id), onSaveVisit(id, fields),
 // onDeleteVisit(id), onCancel() (closes whichever form is open).
+// With a private repo (Section 10): `callbacks.visibility` = { canMakePrivate,
+// whyNot } plus onMakeShared(), onShareInto(id | null, differentFrom),
+// onMakePrivate(); `ui.sharingMatches` = shared restaurants this one
+// looks like, shown as choices before it's shared.
 export function renderRestaurantDetail(container, restaurant, callbacks, ui, allTags = [], tagColors = new Map()) {
   container.textContent = "";
 
@@ -267,6 +321,7 @@ export function renderRestaurantDetail(container, restaurant, callbacks, ui, all
       })
     );
   }
+  if (callbacks.visibility && !ui.editingRestaurant) container.appendChild(renderVisibility(restaurant, callbacks, ui));
 
   if (ui.editingRestaurant) {
     container.appendChild(

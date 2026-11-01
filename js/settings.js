@@ -5,12 +5,17 @@
 const KEY_OWNER = "foodlog_owner";
 const KEY_REPO = "foodlog_repo";
 const KEY_TOKEN = "foodlog_token";
+// My private repo (Phase 2, CLAUDE.md Section 10.1) — optional.
+const KEY_PRIVATE_OWNER = "foodlog_private_owner";
+const KEY_PRIVATE_REPO = "foodlog_private_repo";
 
 export function getSettings() {
   return {
     owner: localStorage.getItem(KEY_OWNER) || "",
     repo: localStorage.getItem(KEY_REPO) || "",
     token: localStorage.getItem(KEY_TOKEN) || "",
+    privateOwner: localStorage.getItem(KEY_PRIVATE_OWNER) || "",
+    privateRepo: localStorage.getItem(KEY_PRIVATE_REPO) || "",
   };
 }
 
@@ -18,6 +23,22 @@ export function saveSettings({ owner, repo, token }) {
   if (owner) localStorage.setItem(KEY_OWNER, owner);
   if (repo) localStorage.setItem(KEY_REPO, repo);
   if (token) localStorage.setItem(KEY_TOKEN, token);
+}
+
+// Sets the private repo, or removes it with null.
+export function savePrivateRepo(parsed) {
+  if (parsed) {
+    localStorage.setItem(KEY_PRIVATE_OWNER, parsed.owner);
+    localStorage.setItem(KEY_PRIVATE_REPO, parsed.repo);
+  } else {
+    localStorage.removeItem(KEY_PRIVATE_OWNER);
+    localStorage.removeItem(KEY_PRIVATE_REPO);
+  }
+}
+
+export function hasPrivateRepo() {
+  const { privateOwner, privateRepo } = getSettings();
+  return Boolean(privateOwner && privateRepo);
 }
 
 export function removeToken() {

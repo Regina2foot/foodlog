@@ -45,7 +45,8 @@ export const STAR_VALUES = ["0", "1", "2", "3", "4", "5"];
 export function matchesMapFilter(restaurant, { ratings = new Set(), tags = new Set() } = {}) {
   if (tags.size > 0 && !(restaurant.tags || []).some((t) => tags.has(t))) return false;
   if (ratings.size === 0) return true;
-  if (restaurant.isWishlist) return ratings.has("wishlist");
+  // A restaurant friends rated can also be on my wishlist: either matches.
+  if (restaurant.isWishlist && ratings.has("wishlist")) return true;
   const value = restaurant.latest?.rating;
-  return Number.isFinite(value) && ratings.has(String(value));
+  return Boolean(restaurant.isRated) && Number.isFinite(value) && ratings.has(String(value));
 }

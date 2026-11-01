@@ -12,6 +12,13 @@ import {
   deleteTag,
   changeTags,
   restoreRestaurants,
+  mergeKeepId,
+  setPersonal,
+  addPersonal,
+  dropPersonal,
+  addToWishlist,
+  removeFromWishlist,
+  mergePersonal,
   generateId,
   hasLocation,
   DATA_FILE,
@@ -29,7 +36,10 @@ import {
   saveLocateArea,
   getShowArchived,
   saveShowArchived,
+  savePrivateRepo,
+  hasPrivateRepo,
 } from "./settings.js";
+import { mergeFiles, placeFacts, routePlan, applyPersonalChanges } from "./files.js";
 import { fetchDataDoc, saveDataDoc, fetchCurrentUser, fetchDataHistory, fetchDataDocAt, GitHubApiError } from "./api.js";
 import { renderRestaurantDetail } from "./history.js";
 import { openMapsUrl, googleDirectionsUrl } from "./maps.js";
@@ -45,7 +55,7 @@ import { createRestorePanel } from "./restoreView.js";
 
 // Bump on every change that gets pushed, so a device still running a
 // cached older app.js is easy to spot (shown at the bottom of Settings).
-const APP_VERSION = "2026-11-01b";
+const APP_VERSION = "2026-11-01c";
 
 // Phones have no visible error console; surface anything uncaught in the
 // status line instead of failing silently.
@@ -56,10 +66,36 @@ function showUnexpectedError(err) {
 window.addEventListener("error", (e) => showUnexpectedError(e.error || e.message));
 window.addEventListener("unhandledrejection", (e) => showUnexpectedError(e.reason));
 
-// The data document (foodlog.json, CLAUDE.md Section 8) and its blob sha.
+// The data (CLAUDE.md Sections 8, 10): the shared file and — with a private
+// repo set — my private file, each { doc, sha } as last read or written.
+const files = { shared: { doc: emptyDoc(), sha: null }, private: null };
+// Both merged for display (files.js mergeFiles); rebuilt after every change.
 let doc = emptyDoc();
-let sha = null;
 let views = []; // restaurant views (data.js), rebuilt in refreshList()
+
+function refreshMerged() {
+  doc = mergeFiles(files.shared.doc, files.private ? files.private.doc : null);
+}
+
+function twoFiles() {
+  return Boolean(files.private);
+}
+
+// Which file holds a restaurant: "private" only if it's in my private file
+// (and not also shared, after an interrupted move).
+function fileOf(id) {
+  const inPrivate = files.private && files.private.doc.restaurants.some((r) => r.id === id);
+  return inPrivate && !files.shared.doc.restaurants.some((r) => r.id === id) ? "private" : "shared";
+}
+
+function currentViews() {
+  return buildRestaurantViews(doc, { me: currentUser });
+}
+
+function repoFor(target) {
+  const { owner, repo, token, privateOwner, privateRepo } = getSettings();
+  return target === "private" ? { owner: privateOwner, repo: privateRepo, token } : { owner, repo, token };
+}
 
 // Each list view keeps its own sorting; the options differ because a
 // wishlist place has no visit (so no rating or visit date), only the date
@@ -105,7 +141,7 @@ const selectedIds = new Set();
 
 // Detail view: which restaurant, and which form (if any) is open.
 let detailId = null;
-const closedDetailUi = () => ({ editingRestaurant: false, addingVisit: false, editingVisitId: null });
+const closedDetailUi = () => ({ editingRestaurant: false, addingVisit: false, editingVisitId: null, sharingMatches: null });
 let detailUi = closedDetailUi();
 
 // Map tab "choose a location" mode (CLAUDE.md Section 9.6):
@@ -121,19 +157,27 @@ let locatePanel = null;
 // Restaurant to centre on the next time the map is drawn ("Show on map").
 let pendingFocusId = null;
 
-// Applies `mutate` (doc -> doc) and writes the result to the data repo,
-// re-fetching the latest document/sha first and retrying once on a 409
-// write conflict (see CLAUDE.md Section 9.15).
-async function writeWithConflictRetry(mutate, { message, maxAttempts = 2 } = {}) {
-  const { owner, repo, token } = getSettings();
+// Applies `mutate` (doc -> doc) to one file ("shared" | "private") and
+// writes the result, re-fetching the latest document/sha first and retrying
+// once on a 409 write conflict (see CLAUDE.md Section 9.15). A change that
+// changes nothing isn't written (no empty commit) — so multi-file actions
+// can simply call this for every file that might be affected.
+async function writeFile(target, mutate, { message, maxAttempts = 2 } = {}) {
+  if (target === "private" && !files.private) throw new Error("No private repo is set in Settings");
+  const config = repoFor(target);
   let lastError;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const { doc: latest, sha: latestSha } = await fetchDataDoc({ owner, repo, token });
+    const { doc: latest, sha: latestSha } = await fetchDataDoc(config);
     const next = mutate(latest);
+    if (JSON.stringify(next) === JSON.stringify(latest)) {
+      files[target] = { doc: latest, sha: latestSha };
+      refreshMerged();
+      return next;
+    }
     try {
-      const result = await saveDataDoc({ owner, repo, token, doc: next, sha: latestSha, message });
-      doc = next;
-      sha = result.sha;
+      const result = await saveDataDoc({ ...config, doc: next, sha: latestSha, message });
+      files[target] = { doc: next, sha: result.sha };
+      refreshMerged();
       return next;
     } catch (err) {
       if (err instanceof GitHubApiError && err.status === 409) {
@@ -147,19 +191,29 @@ async function writeWithConflictRetry(mutate, { message, maxAttempts = 2 } = {})
 }
 
 async function loadData() {
-  const { owner, repo, token } = getSettings();
   setStatus(els.statusMessage, "Loading…");
   try {
-    const result = await fetchDataDoc({ owner, repo, token });
-    doc = result.doc;
-    sha = result.sha;
+    const [sharedResult, privateResult] = await Promise.all([
+      fetchDataDoc(repoFor("shared")),
+      hasPrivateRepo()
+        ? fetchDataDoc(repoFor("private")).catch((err) => {
+            throw new GitHubApiError(`Private repo: ${err.message}`, err.status);
+          })
+        : null,
+    ]);
+    files.shared = { doc: sharedResult.doc, sha: sharedResult.sha };
+    files.private = privateResult ? { doc: privateResult.doc, sha: privateResult.sha } : null;
+    refreshMerged();
+    syncHistoryFileChoice();
     refreshList();
     if (detailId) refreshDetail();
+    const privateCount = files.private ? files.private.doc.restaurants.length : 0;
     setStatus(
       els.statusMessage,
-      result.isNew
+      sharedResult.isNew && !privateCount
         ? `No data yet — your first save creates ${DATA_FILE} in your data repo.`
-        : `Loaded ${doc.restaurants.length} restaurant(s), ${doc.visits.length} visit(s).`
+        : `Loaded ${doc.restaurants.length} restaurant(s), ${doc.visits.length} visit(s)` +
+            (files.private ? ` (${privateCount} private).` : ".")
     );
   } catch (err) {
     setStatus(els.statusMessage, describeError(err, "Failed to load"), true);
@@ -199,6 +253,7 @@ const els = {
   settingsForm: document.getElementById("settings-form"),
   settingsStatus: document.getElementById("settings-status"),
   dataRepoInput: document.getElementById("setting-data-repo"),
+  privateRepoInput: document.getElementById("setting-private-repo"),
   tokenInput: document.getElementById("setting-token"),
   removeTokenButton: document.getElementById("btn-remove-token"),
   ratingForm: document.getElementById("rating-form"),
@@ -238,6 +293,8 @@ const els = {
   bulkTagsPanel: document.getElementById("bulk-tags-panel"),
   tagManager: document.getElementById("tag-manager"),
   historyPanel: document.getElementById("history-panel"),
+  historyFile: document.getElementById("history-file"),
+  historyFileLabel: document.getElementById("history-file-label"),
   importReview: document.getElementById("import-review"),
   mapContainer: document.getElementById("map"),
   mapSummary: document.getElementById("map-summary"),
@@ -260,7 +317,7 @@ function matchesNameSearch(restaurant) {
 }
 
 function refreshList() {
-  views = buildRestaurantViews(doc);
+  views = currentViews();
   tagColors = computeTagColors(doc.restaurants);
   // Distances only exist once the user has shared their position.
   const position = lastPosition();
@@ -290,7 +347,7 @@ function refreshList() {
     // Rated = has at least one visit; Wishlist = no visits (Section 8).
     // Archived restaurants only show in their own view (if enabled).
     const inView = views.filter((r) =>
-      listView === "archived" ? r.isArchived : !r.isArchived && (listView === "wishlist" ? r.isWishlist : !r.isWishlist)
+      listView === "archived" ? r.isArchived : !r.isArchived && (listView === "wishlist" ? r.isWishlist : r.isRated)
     );
     refreshTagFilter(inView);
     refreshCityFilter(inView);
@@ -355,7 +412,8 @@ function refreshList() {
 function refreshMap() {
   if (els.mapPanel.hidden) return;
   // Archived (closed) restaurants never appear on the map.
-  const active = views.filter((r) => !r.isArchived);
+  // Only what's in my lists: rated by anyone, or on my wishlist.
+  const active = views.filter((r) => !r.isArchived && (r.isRated || r.isWishlist));
   // "Show on map" for a restaurant the filter hides: clear the filter.
   const focus = pendingFocusId && active.find((r) => r.id === pendingFocusId);
   if (focus && !matchesMapFilter(focus, mapFilter)) mapFilter = { ratings: new Set(), tags: new Set() };
@@ -542,7 +600,7 @@ function locationFields(place) {
 // instead of to the restaurant's page.
 async function applyLocationToRestaurant(id, place, stayOnMap = false) {
   try {
-    await writeWithConflictRetry((d) => updateRestaurant(d, id, locationFields(place)), { message: "Set restaurant location" });
+    await writeFile(fileOf(id), (d) => updateRestaurant(d, id, locationFields(place)), { message: "Set restaurant location" });
     endMapPick();
     refreshList();
     if (!stayOnMap) {
@@ -600,24 +658,29 @@ function initMapPicking() {
   });
 }
 
-// Saves locations found by "Find locations" in one commit; skips any
-// restaurant that got a location meanwhile (or was deleted).
+// Saves locations found by "Find locations" in one commit per file; skips
+// any restaurant that got a location meanwhile (or was deleted).
 async function saveFoundLocations(updates) {
-  await writeWithConflictRetry(
-    (d) =>
-      updates.reduce(
-        (acc, { id, place }) =>
-          acc.restaurants.some((r) => r.id === id && !hasLocation(r)) ? updateRestaurant(acc, id, locationFields(place)) : acc,
-        d
-      ),
-    { message: `Set location of ${updates.length} restaurant(s)` }
-  );
+  for (const target of ["shared", "private"]) {
+    const mine = updates.filter((u) => fileOf(u.id) === target);
+    if (mine.length === 0) continue;
+    await writeFile(
+      target,
+      (d) =>
+        mine.reduce(
+          (acc, { id, place }) =>
+            acc.restaurants.some((r) => r.id === id && !hasLocation(r)) ? updateRestaurant(acc, id, locationFields(place)) : acc,
+          d
+        ),
+      { message: `Set location of ${mine.length} restaurant(s)` }
+    );
+  }
   refreshList();
 }
 
 function initLocatePanel() {
   locatePanel = createLocatePanel(els.locatePanel, {
-    getRestaurants: () => views.filter((r) => !r.isArchived),
+    getRestaurants: () => views.filter((r) => !r.isArchived && (r.isRated || r.isWishlist)),
     getLastArea: getLocateArea,
     saveArea: saveLocateArea,
     isPicking: () => Boolean(mapPick),
@@ -642,22 +705,45 @@ function initLocatePanel() {
 }
 
 // Settings → History: bring back deleted restaurants from an older version,
-// or restore a whole older version. Both are ordinary new saves.
+// or restore a whole older version. Both are ordinary new saves. With a
+// private repo, a choice says which file's history is shown.
+let historyTarget = "shared";
+
 function initRestorePanel() {
+  els.historyFile.addEventListener("change", () => {
+    historyTarget = els.historyFile.value;
+    buildRestorePanel();
+  });
+  buildRestorePanel();
+}
+
+// Shows the file choice only with a private repo (called after loading).
+function syncHistoryFileChoice() {
+  els.historyFileLabel.hidden = !twoFiles();
+  if (!twoFiles() && historyTarget !== "shared") {
+    historyTarget = "shared";
+    els.historyFile.value = "shared";
+    buildRestorePanel();
+  }
+}
+
+function buildRestorePanel() {
+  const target = historyTarget;
   const restore = async (mutate, message, doneText) => {
     setStatus(els.statusMessage, "Saving…");
     try {
-      await writeWithConflictRetry(mutate, { message });
+      await writeFile(target, mutate, { message });
       refreshList();
       setStatus(els.statusMessage, doneText);
     } catch (err) {
       setStatus(els.statusMessage, describeError(err, "Failed to restore"), true);
     }
   };
+  els.historyPanel.textContent = "";
   createRestorePanel(els.historyPanel, {
-    fetchHistory: (page) => fetchDataHistory(getSettings(), page),
-    fetchVersion: (ref) => fetchDataDocAt(getSettings(), ref),
-    getDoc: () => doc,
+    fetchHistory: (page) => fetchDataHistory(repoFor(target), page),
+    fetchVersion: (ref) => fetchDataDocAt(repoFor(target), ref),
+    getDoc: () => (files[target] || files.shared).doc,
     restoreSelected: (older, ids) =>
       restore(
         (d) => restoreRestaurants(d, older, ids),
@@ -756,10 +842,12 @@ function updateBulkActionButtons() {
   els.notSameButton.textContent = `Not the same (${count})`;
 }
 
-// Runs a detail-view change, then closes any open form and re-renders.
-async function saveDetailChange(mutate, message, doneText) {
+// Runs a detail-view change (`run` does the writes), then closes any open
+// form and re-renders.
+async function saveDetailChange(run, doneText) {
+  setStatus(els.statusMessage, "Saving…");
   try {
-    await writeWithConflictRetry(mutate, { message });
+    await run();
     detailUi = closedDetailUi();
     refreshList();
     refreshDetail();
@@ -769,8 +857,94 @@ async function saveDetailChange(mutate, message, doneText) {
   }
 }
 
+const isMine = (createdBy) => !currentUser || !createdBy || createdBy === "unknown" || createdBy === currentUser;
+
+// Deletes restaurants (and their visits) from whichever file holds them,
+// and forgets my tags/notes/wishlist entries for the shared ones.
+async function deleteRestaurantsEverywhere(ids) {
+  const sharedIds = ids.filter((id) => fileOf(id) === "shared");
+  const privateIds = ids.filter((id) => fileOf(id) === "private");
+  if (sharedIds.length) {
+    await writeFile("shared", (d) => deleteRestaurants(d, sharedIds), { message: `Delete ${sharedIds.length} restaurant(s)` });
+  }
+  if (twoFiles()) {
+    await writeFile("private", (d) => dropPersonal(deleteRestaurants(d, privateIds), sharedIds), {
+      message: `Delete ${ids.length} restaurant(s)`,
+    });
+  }
+}
+
+// Private → shared (Section 10.3), optionally into an existing shared
+// restaurant (`intoId`: my visits go there). Destination first, then the
+// private file, so an interruption can duplicate but never lose anything.
+// My tags/note stay mine (as personal entries); a place without visits
+// stays on my wishlist.
+async function makeShared(id, { intoId = null, differentFrom = [] } = {}) {
+  const priv = files.private.doc;
+  const restaurant = priv.restaurants.find((r) => r.id === id);
+  if (!restaurant) return;
+  const visits = priv.visits.filter((v) => v.restaurant_id === id);
+  const targetId = intoId || id;
+  const facts = placeFacts(restaurant);
+  if (differentFrom.length) facts.not_same_as = [...new Set([...(facts.not_same_as || []), ...differentFrom])];
+  await writeFile(
+    "shared",
+    (d) => {
+      const known = new Set(d.visits.map((v) => v.id));
+      const moved = visits.filter((v) => !known.has(v.id)).map((v) => ({ ...v, restaurant_id: targetId }));
+      const restaurants = intoId || d.restaurants.some((r) => r.id === id) ? d.restaurants : [...d.restaurants, facts];
+      return { ...d, restaurants, visits: [...d.visits, ...moved] };
+    },
+    { message: intoId ? "Share visits to an existing restaurant" : "Share a restaurant" }
+  );
+  await writeFile(
+    "private",
+    (d) => {
+      let next = deleteRestaurants(d, [id]);
+      next = addPersonal(next, targetId, { tags: restaurant.tags || [], note: restaurant.note || "" });
+      return visits.length ? next : addToWishlist(next, targetId);
+    },
+    { message: "Share a restaurant" }
+  );
+}
+
+// Shared → private: only while every visit on it is mine. My tags/note go
+// back onto it. Destination (private) first, then the shared file.
+async function makePrivate(id) {
+  const shared = files.shared.doc;
+  const restaurant = shared.restaurants.find((r) => r.id === id);
+  if (!restaurant) return;
+  const visits = shared.visits.filter((v) => v.restaurant_id === id);
+  if (!visits.every((v) => isMine(v.created_by))) throw new Error("Friends have rated it, so it stays shared");
+  const view = currentViews().find((r) => r.id === id);
+  await writeFile(
+    "private",
+    (d) => {
+      if (d.restaurants.some((r) => r.id === id)) return dropPersonal(d, [id]);
+      const known = new Set(d.visits.map((v) => v.id));
+      const moved = { ...placeFacts(restaurant), tags: view?.tags || [], note: view?.note || "" };
+      return dropPersonal({ ...d, restaurants: [...d.restaurants, moved], visits: [...d.visits, ...visits.filter((v) => !known.has(v.id))] }, [id]);
+    },
+    { message: "Make a restaurant private" }
+  );
+  await writeFile("shared", (d) => deleteRestaurants(d, [id]), { message: "Make a restaurant private" });
+}
+
+// Saves name/tags/note from "Edit restaurant": on a shared restaurant (with
+// a private repo) the name goes to the shared file, tags and note into my
+// personal entry; otherwise all into the restaurant's file.
+async function saveRestaurantEdit(id, { name, tags, note }) {
+  const target = fileOf(id);
+  if (target === "shared" && twoFiles()) {
+    await writeFile("shared", (d) => updateRestaurant(d, id, { name }), { message: "Edit restaurant" });
+    await writeFile("private", (d) => setPersonal(d, id, { tags, note }), { message: "Edit my tags and note" });
+  } else {
+    await writeFile(target, (d) => updateRestaurant(d, id, { name, tags, note }), { message: "Edit restaurant" });
+  }
+}
+
 function refreshDetail() {
-  const restaurant = buildRestaurantViews(doc).find((r) => r.id === detailId);
+  const restaurant = currentViews().find((r) => r.id === detailId);
   if (!restaurant) {
     goToList();
     return;
@@ -803,17 +977,18 @@ function refreshDetail() {
         if (hasLocation(restaurant)) pendingFocusId = id;
         showTab("map");
       },
-      onSaveRestaurant: (changes) =>
-        saveDetailChange((d) => updateRestaurant(d, id, changes), "Edit restaurant", "Restaurant updated."),
+      onSaveRestaurant: (changes) => saveDetailChange(() => saveRestaurantEdit(id, changes), "Restaurant updated."),
       onArchive: (archived) =>
         saveDetailChange(
-          (d) => updateRestaurant(d, id, { archived_at: archived ? new Date().toISOString().slice(0, 10) : null }),
-          archived ? "Archive restaurant" : "Unarchive restaurant",
+          () =>
+            writeFile(fileOf(id), (d) => updateRestaurant(d, id, { archived_at: archived ? new Date().toISOString().slice(0, 10) : null }), {
+              message: archived ? "Archive restaurant" : "Unarchive restaurant",
+            }),
           archived ? "Archived. It's now only in the Archived list (if enabled in Settings)." : "Back in your lists."
         ),
       onDeleteRestaurant: async () => {
         try {
-          await writeWithConflictRetry((d) => deleteRestaurants(d, [id]), { message: "Delete restaurant" });
+          await deleteRestaurantsEverywhere([id]);
           refreshList();
           goToList();
           setStatus(els.statusMessage, "Restaurant deleted.");
@@ -823,14 +998,43 @@ function refreshDetail() {
       },
       onAddVisit: () => open({ addingVisit: true }),
       onSaveNewVisit: (fields) =>
-        saveDetailChange(
-          (d) => addVisit(d, { id: generateId(), restaurant_id: id, ...fields, ...stamp() }),
-          "Add visit",
-          "Visit added."
-        ),
+        saveDetailChange(async () => {
+          const target = fileOf(id);
+          await writeFile(target, (d) => addVisit(d, { id: generateId(), restaurant_id: id, ...fields, ...stamp() }), {
+            message: "Add visit",
+          });
+          // Rating it myself takes it off my wishlist (Section 10.2).
+          if (target === "shared" && twoFiles()) {
+            await writeFile("private", (d) => removeFromWishlist(d, [id]), { message: "Update my wishlist" });
+          }
+        }, "Visit added."),
       onEditVisit: (visitId) => open({ editingVisitId: visitId }),
-      onSaveVisit: (visitId, fields) => saveDetailChange((d) => updateVisit(d, visitId, fields), "Edit visit", "Visit updated."),
-      onDeleteVisit: (visitId) => saveDetailChange((d) => deleteVisit(d, visitId), "Delete visit", "Visit deleted."),
+      onSaveVisit: (visitId, fields) =>
+        saveDetailChange(() => writeFile(fileOf(id), (d) => updateVisit(d, visitId, fields), { message: "Edit visit" }), "Visit updated."),
+      onDeleteVisit: (visitId) =>
+        saveDetailChange(() => writeFile(fileOf(id), (d) => deleteVisit(d, visitId), { message: "Delete visit" }), "Visit deleted."),
+      // Private / Shared (Section 10.3), only with a private repo.
+      visibility: twoFiles()
+        ? {
+            canMakePrivate: restaurant.visits.every((v) => isMine(v.created_by)),
+            whyNot: "Friends have rated it, so it stays shared.",
+          }
+        : null,
+      onMakeShared: () => {
+        const sharedViews = currentViews().filter((r) => r.visibility === "shared" && r.id !== id);
+        const matches = createMatcher(sharedViews)(restaurant).map((m) => m.restaurant);
+        if (matches.length) {
+          open({ sharingMatches: matches.slice(0, MAX_SHOWN_MATCHES) });
+          return;
+        }
+        saveDetailChange(() => makeShared(id), "Shared with your friends.");
+      },
+      onShareInto: (intoId, differentFrom) =>
+        saveDetailChange(async () => {
+          await makeShared(id, { intoId, differentFrom });
+          if (intoId) detailId = intoId;
+        }, intoId ? "Your visits are now on the shared restaurant." : "Shared with your friends."),
+      onMakePrivate: () => saveDetailChange(() => makePrivate(id), "Now private — only you can see it."),
     },
     detailUi,
     allKnownTags(),
@@ -974,15 +1178,16 @@ function initListFilters() {
   });
 }
 
-// Shared by the three bulk actions: confirm, write once, clear selection.
-function initBulkAction(button, { minCount, confirmText, mutate, message, doneText }) {
+// Shared by the three bulk actions: confirm, write (once per file
+// involved), clear selection.
+function initBulkAction(button, { minCount, confirmText, run, doneText }) {
   button.addEventListener("click", async () => {
     const ids = [...selectedIds];
     if (ids.length < minCount) return;
     if (!confirm(confirmText(ids.length))) return;
     setStatus(els.statusMessage, "Saving…");
     try {
-      await writeWithConflictRetry((d) => mutate(d, ids), { message: message(ids.length) });
+      await run(ids);
       selectedIds.clear();
       refreshList();
       setStatus(els.statusMessage, doneText(ids.length));
@@ -992,28 +1197,71 @@ function initBulkAction(button, { minCount, confirmText, mutate, message, doneTe
   });
 }
 
+// Merging happens within one file; a private and a shared restaurant have
+// to be made the same first (otherwise merging would silently share a
+// private one). With shared ones, my personal tags/notes move along.
+async function mergeSelected(ids) {
+  const targets = new Set(ids.map(fileOf));
+  if (targets.size > 1) {
+    throw new Error("Some of them are private and some shared — make them all the same first (on each restaurant's page)");
+  }
+  const target = [...targets][0];
+  const keepId = mergeKeepId(files[target].doc, ids);
+  await writeFile(target, (d) => mergeRestaurants(d, ids), { message: `Merge ${ids.length} restaurants` });
+  if (target === "shared" && twoFiles()) {
+    await writeFile("private", (d) => mergePersonal(d, keepId, ids.filter((x) => x !== keepId)), { message: "Merge my tags and notes" });
+  }
+}
+
 function initBulkActions() {
   initBulkAction(els.deleteSelectedButton, {
     minCount: 1,
     confirmText: (n) => `Delete ${n} restaurant(s) and all their visits? This cannot be undone.`,
-    mutate: deleteRestaurants,
-    message: (n) => `Delete ${n} restaurant(s)`,
+    run: deleteRestaurantsEverywhere,
     doneText: (n) => `Deleted ${n} restaurant(s).`,
   });
   initBulkAction(els.mergeSelectedButton, {
     minCount: 2,
     confirmText: (n) => `Merge ${n} selected restaurants into one? Their visits, tags and notes are combined. This cannot be undone.`,
-    mutate: mergeRestaurants,
-    message: (n) => `Merge ${n} restaurants`,
+    run: mergeSelected,
     doneText: (n) => `Merged ${n} restaurants into one.`,
   });
   initBulkAction(els.notSameButton, {
     minCount: 2,
     confirmText: (n) => `Mark the ${n} selected restaurants as different from each other? They won't be suggested as duplicates of each other again.`,
-    mutate: markRestaurantsDifferent,
-    message: (n) => `Mark ${n} restaurants as not duplicates`,
+    // Each file records it on its own restaurants (writeFile skips a file
+    // without any of them).
+    run: async (ids) => {
+      for (const target of twoFiles() ? ["shared", "private"] : ["shared"]) {
+        await writeFile(target, (d) => markRestaurantsDifferent(d, ids), { message: `Mark ${ids.length} restaurants as not duplicates` });
+      }
+    },
     doneText: (n) => `Marked ${n} restaurants as different.`,
   });
+}
+
+// Bulk tag changes: private restaurants carry their tags; on shared ones
+// (with a private repo) my tags are personal entries in the private file;
+// without one, tags stay on the shared restaurants.
+async function changeTagsEverywhere(ids, { add, remove }) {
+  const message = `Change tags on ${ids.length} restaurant(s)`;
+  const sharedIds = ids.filter((id) => fileOf(id) === "shared");
+  const privateIds = ids.filter((id) => fileOf(id) === "private");
+  if (!twoFiles()) {
+    await writeFile("shared", (d) => changeTags(d, ids, { add, remove }), { message });
+    return;
+  }
+  const removeSet = new Set(remove);
+  const current = new Map(currentViews().map((r) => [r.id, r.tags]));
+  await writeFile(
+    "private",
+    (d) =>
+      sharedIds.reduce(
+        (acc, id) => setPersonal(acc, id, { tags: [...new Set([...(current.get(id) || []).filter((t) => !removeSet.has(t)), ...add])] }),
+        changeTags(d, privateIds, { add, remove })
+      ),
+    { message }
+  );
 }
 
 function closeBulkTags() {
@@ -1038,9 +1286,7 @@ function initBulkTags() {
         }
         setStatus(els.statusMessage, "Saving…");
         try {
-          await writeWithConflictRetry((d) => changeTags(d, ids, { add, remove }), {
-            message: `Change tags on ${ids.length} restaurant(s)`,
-          });
+          await changeTagsEverywhere(ids, { add, remove });
           selectedIds.clear();
           refreshList();
           setStatus(els.statusMessage, `Tags updated on ${ids.length} restaurant(s).`);
@@ -1088,7 +1334,10 @@ function refreshTagManager() {
 async function saveTagChange(mutate, message, doneText, mapTag) {
   setStatus(els.statusMessage, "Saving…");
   try {
-    await writeWithConflictRetry(mutate, { message });
+    // Tags live in both files (private restaurants and my personal entries;
+    // old-format tags on shared restaurants) — files without it are skipped.
+    await writeFile("shared", mutate, { message });
+    if (twoFiles()) await writeFile("private", mutate, { message });
     renamingTag = null;
     if (tagFilter) tagFilter = mapTag(tagFilter) || "";
     formTags = [...new Set(formTags.map(mapTag).filter(Boolean))];
@@ -1108,20 +1357,29 @@ function initWishlistToggle() {
 // Which tab a matched restaurant lives in, so a match isn't confusing.
 function listNameOf(restaurant) {
   if (restaurant.isArchived) return "Archived";
-  return restaurant.isWishlist ? "Wishlist" : "Rated";
+  return restaurant.isRated ? "Rated" : "Wishlist";
 }
 
 const REASON_TEXT = { place: "same place", nearby: "similar name, same spot", name: "similar name" };
 const MAX_SHOWN_MATCHES = 3;
+
+// Saves new or matched places (import plan format, googleImport.js) into the
+// right files (files.js routePlan): the shared file first, then my private
+// file (private places, my tags/notes on shared ones, wishlist updates).
+async function applyPlan(plan, message) {
+  const routed = routePlan(plan, { twoFiles: twoFiles(), fileOf });
+  if (routed.shared.length) await writeFile("shared", (d) => applyImport(d, routed.shared), { message });
+  if (twoFiles()) {
+    await writeFile("private", (d) => applyPersonalChanges(applyImport(d, routed.private), routed), { message });
+  }
+}
 
 async function runImport(plan) {
   const newCount = plan.filter((p) => p.decision !== "same").length;
   const sameCount = plan.length - newCount;
   setStatus(els.importStatus, "Importing…");
   try {
-    await writeWithConflictRetry((d) => applyImport(d, plan), {
-      message: `Import ${plan.length} place(s) from Google Maps`,
-    });
+    await applyPlan(plan, `Import ${plan.length} place(s) from Google Maps`);
     hideImportReview();
     els.importTagInput.value = "";
     refreshList();
@@ -1269,7 +1527,7 @@ function initImport() {
 
       // Same-place matches were already skipped above; anything still
       // matching is reviewed before saving.
-      const matchExisting = createMatcher(buildRestaurantViews(doc));
+      const matchExisting = createMatcher(currentViews());
       const items = built.map((item) => ({ ...item, matches: matchExisting(item.restaurant) }));
 
       const ratedCount = built.filter((i) => i.visit).length;
@@ -1307,6 +1565,9 @@ function initSettingsPanel() {
   if (current.owner && current.repo) {
     els.dataRepoInput.value = `${current.owner}/${current.repo}`;
   }
+  if (current.privateOwner && current.privateRepo) {
+    els.privateRepoInput.value = `${current.privateOwner}/${current.privateRepo}`;
+  }
   updateSettingsStatus();
   // Settings sections start closed, except this one while it still needs filling in.
   if (!hasCompleteSettings()) document.getElementById("section-repo").open = true;
@@ -1318,11 +1579,25 @@ function initSettingsPanel() {
     if (repoValue && !parsed) {
       setStatus(
         els.settingsStatus,
-        "Couldn't read a GitHub repo from the Data repo field. Enter owner/repo, or paste the repo's GitHub link. Nothing was saved.",
+        "Couldn't read a GitHub repo from the Shared data repo field. Enter owner/repo, or paste the repo's GitHub link. Nothing was saved.",
         true
       );
       return;
     }
+    // The private repo is optional: an empty field removes it.
+    const privateValue = els.privateRepoInput.value.trim();
+    const privateParsed = privateValue ? parseRepoInput(privateValue) : null;
+    if (privateValue && !privateParsed) {
+      setStatus(els.settingsStatus, "Couldn't read a GitHub repo from the My private repo field. Nothing was saved.", true);
+      return;
+    }
+    const sharedNow = parsed || { owner: getSettings().owner, repo: getSettings().repo };
+    if (privateParsed && privateParsed.owner === sharedNow.owner && privateParsed.repo === sharedNow.repo) {
+      setStatus(els.settingsStatus, "The private repo must be a different repo than the shared one. Nothing was saved.", true);
+      return;
+    }
+    savePrivateRepo(privateParsed);
+    els.privateRepoInput.value = privateParsed ? `${privateParsed.owner}/${privateParsed.repo}` : "";
     saveSettings({
       owner: parsed?.owner,
       repo: parsed?.repo,
@@ -1348,9 +1623,10 @@ function initSettingsPanel() {
 }
 
 function updateSettingsStatus() {
-  const { owner, repo, token } = getSettings();
+  const { owner, repo, token, privateOwner, privateRepo } = getSettings();
   const parts = [];
-  parts.push(owner && repo ? `Data repo: ${owner}/${repo}` : "Data repo not set.");
+  parts.push(owner && repo ? `Shared data repo: ${owner}/${repo}.` : "Shared data repo not set.");
+  parts.push(privateOwner && privateRepo ? `Private repo: ${privateOwner}/${privateRepo}.` : "No private repo.");
   parts.push(token ? "Token saved." : "No token saved.");
   setStatus(els.settingsStatus, parts.join(" "));
 }
@@ -1433,9 +1709,10 @@ async function saveFromForm({ decision, sameAs, differentFrom }) {
   const { restaurant, visit } = buildFromForm();
   setStatus(els.statusMessage, "Saving…");
   try {
-    await writeWithConflictRetry((d) => applyImport(d, [{ restaurant, visit, decision, sameAs, differentFrom }]), {
-      message: visit ? `Add visit to ${restaurant.name || "restaurant"}` : `Add ${restaurant.name || "restaurant"} to wishlist`,
-    });
+    await applyPlan(
+      [{ restaurant, visit, decision, sameAs, differentFrom }],
+      visit ? `Add visit to ${restaurant.name || "restaurant"}` : `Add ${restaurant.name || "restaurant"} to wishlist`
+    );
     els.ratingForm.reset();
     els.ratingPicker.dataset.value = "0";
     els.visitedFieldsContainer.hidden = false;
@@ -1462,7 +1739,7 @@ function initRatingForm() {
     }
 
     const { restaurant, visit } = buildFromForm();
-    const matches = createMatcher(buildRestaurantViews(doc))(restaurant);
+    const matches = createMatcher(currentViews())(restaurant);
     if (matches.length > 0) {
       showDuplicateWarning(matches, Boolean(visit));
       return;
@@ -1560,7 +1837,7 @@ function initToolbar() {
       setStatus(els.statusMessage, "Nothing to export yet.", true);
       return;
     }
-    downloadCsv(restaurantsToCsv(buildRestaurantViews(doc)));
+    downloadCsv(restaurantsToCsv(currentViews()));
     setStatus(els.statusMessage, `Exported ${doc.restaurants.length} restaurant(s), ${doc.visits.length} visit(s) as CSV.`);
   });
 }

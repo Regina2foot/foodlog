@@ -45,11 +45,19 @@ const byNewestVisit = (a, b) =>
   (b.visited_at || "").localeCompare(a.visited_at || "") || (b.created_at || "").localeCompare(a.created_at || "");
 
 // Restaurants joined with their visits, for display: `visits` newest
-// first, `latest` = most recent visit (null for a wishlist place).
+// first, `latest` = most recent visit (null without visits).
+// `isRated`: has at least one visit (anyone's). `isWishlist`: on *my*
+// wishlist (Section 10.2) — I haven't rated it, and it's either a private
+// place without visits, a shared one I put on my wishlist
+// (`onMyWishlist`, from the private file), or a shared one without any
+// visits that I added (so a single-user file works as before). `me` is
+// my GitHub login (null = unknown → treated as mine). A restaurant can be
+// both rated (by friends) and on my wishlist.
 // `isArchived`: marked as closed (`archived_at` set) — kept for the
 // record, but left out of Rated/Wishlist, the map and Find locations.
 // `city`: from the address (cityOf), for the list's city filter.
-export function buildRestaurantViews(doc) {
+export function buildRestaurantViews(doc, { me = null } = {}) {
+  const isMine = (createdBy) => !me || !createdBy || createdBy === "unknown" || createdBy === me;
   const visitsByRestaurant = new Map();
   for (const visit of doc.visits) {
     if (!visitsByRestaurant.has(visit.restaurant_id)) visitsByRestaurant.set(visit.restaurant_id, []);
@@ -57,12 +65,15 @@ export function buildRestaurantViews(doc) {
   }
   return doc.restaurants.map((r) => {
     const visits = (visitsByRestaurant.get(r.id) || []).sort(byNewestVisit);
+    const ratedByMe = visits.some((v) => isMine(v.created_by));
+    const unvisitedAndMine = visits.length === 0 && (r.visibility === "private" || isMine(r.created_by));
     return {
       ...r,
       tags: Array.isArray(r.tags) ? r.tags : [],
       visits,
       latest: visits[0] || null,
-      isWishlist: visits.length === 0,
+      isRated: visits.length > 0,
+      isWishlist: !ratedByMe && (Boolean(r.onMyWishlist) || unvisitedAndMine),
       isArchived: Boolean(r.archived_at),
       city: cityOf(r.address),
     };
@@ -108,6 +119,15 @@ export function deleteVisit(doc, id) {
 // united, notes joined; location, address, osm and link are filled from
 // the others where the kept one has none; references to the removed ones
 // in other restaurants' not_same_as now point to the kept one.
+// Which of `ids` a merge keeps (exported so a caller can move personal
+// tags/notes onto the same one): most visits, then the oldest.
+export function mergeKeepId(doc, ids) {
+  const idSet = new Set(ids);
+  const views = buildRestaurantViews(doc).filter((r) => idSet.has(r.id));
+  views.sort((a, b) => b.visits.length - a.visits.length || (a.created_at || "").localeCompare(b.created_at || ""));
+  return views[0]?.id || null;
+}
+
 export function mergeRestaurants(doc, ids) {
   const idSet = new Set(ids);
   const views = buildRestaurantViews(doc).filter((r) => idSet.has(r.id));
@@ -165,23 +185,93 @@ export function markRestaurantsDifferent(doc, ids) {
 // Renames a tag on every restaurant. Renaming to a tag that already exists
 // merges the two (a restaurant never ends up with the same tag twice). The
 // tag keeps its place in each list, so its colour usually stays the same.
+// Also applies to my personal tags on shared restaurants (`personal` in
+// the private file, Section 10.2).
 export function renameTag(doc, from, to) {
-  return {
-    ...doc,
-    restaurants: doc.restaurants.map((r) =>
-      (r.tags || []).includes(from) ? { ...r, tags: [...new Set(r.tags.map((t) => (t === from ? to : t)))] } : r
-    ),
-  };
+  const rename = (tags) => [...new Set(tags.map((t) => (t === from ? to : t)))];
+  return mapPersonal(
+    {
+      ...doc,
+      restaurants: doc.restaurants.map((r) => ((r.tags || []).includes(from) ? { ...r, tags: rename(r.tags) } : r)),
+    },
+    (entry) => ((entry.tags || []).includes(from) ? { ...entry, tags: rename(entry.tags) } : entry)
+  );
 }
 
-// Removes a tag from every restaurant (the restaurants themselves stay).
+// Removes a tag from every restaurant (the restaurants themselves stay),
+// including my personal tags on shared restaurants.
 export function deleteTag(doc, tag) {
-  return {
-    ...doc,
-    restaurants: doc.restaurants.map((r) =>
-      (r.tags || []).includes(tag) ? { ...r, tags: r.tags.filter((t) => t !== tag) } : r
-    ),
-  };
+  const drop = (tags) => tags.filter((t) => t !== tag);
+  return mapPersonal(
+    {
+      ...doc,
+      restaurants: doc.restaurants.map((r) => ((r.tags || []).includes(tag) ? { ...r, tags: drop(r.tags) } : r)),
+    },
+    (entry) => ((entry.tags || []).includes(tag) ? { ...entry, tags: drop(entry.tags) } : entry)
+  );
+}
+
+// --- The private file's extras (Section 10.2) ----------------------------
+// `personal`: { "<shared restaurant id>": { tags, note } } — my own tags
+// and note on shared restaurants. `wishlist`: ids of shared restaurants on
+// my wishlist. Both only exist in a private file.
+
+const isPlainObject = (x) => Boolean(x) && typeof x === "object" && !Array.isArray(x);
+const personalOf = (doc) => (isPlainObject(doc.personal) ? doc.personal : {});
+const wishlistOf = (doc) => (Array.isArray(doc.wishlist) ? doc.wishlist : []);
+
+function mapPersonal(doc, fn) {
+  if (!isPlainObject(doc.personal)) return doc;
+  return { ...doc, personal: Object.fromEntries(Object.entries(doc.personal).map(([id, entry]) => [id, fn(entry)])) };
+}
+
+// Replaces my tags and/or note on a shared restaurant (fields left out
+// stay as they are). An entry with neither is removed.
+export function setPersonal(doc, id, { tags, note }) {
+  const current = personalOf(doc)[id] || {};
+  const next = { tags: tags ?? current.tags ?? [], note: note ?? current.note ?? "" };
+  const personal = { ...personalOf(doc) };
+  if (next.tags.length || next.note) personal[id] = next;
+  else delete personal[id];
+  return { ...doc, personal };
+}
+
+// Adds tags (union) and a note (only if I have none yet) — for imports and
+// "this is the same restaurant", which add rather than replace.
+export function addPersonal(doc, id, { tags = [], note = "" }) {
+  const current = personalOf(doc)[id] || {};
+  return setPersonal(doc, id, {
+    tags: [...new Set([...(current.tags || []), ...tags])],
+    note: current.note || note || "",
+  });
+}
+
+// Forgets my tags/note and wishlist entry for restaurants that are gone or
+// moved into this file.
+export function dropPersonal(doc, ids) {
+  const remove = new Set(ids);
+  const personal = Object.fromEntries(Object.entries(personalOf(doc)).filter(([id]) => !remove.has(id)));
+  return { ...doc, personal, wishlist: wishlistOf(doc).filter((id) => !remove.has(id)) };
+}
+
+export function addToWishlist(doc, id) {
+  return { ...doc, wishlist: [...new Set([...wishlistOf(doc), id])] };
+}
+
+export function removeFromWishlist(doc, ids) {
+  const remove = new Set(ids);
+  return { ...doc, wishlist: wishlistOf(doc).filter((id) => !remove.has(id)) };
+}
+
+// After merging shared restaurants: my tags/notes of the removed ones move
+// onto the kept one, and it stays on my wishlist if any of them was.
+export function mergePersonal(doc, keepId, otherIds) {
+  const personal = personalOf(doc);
+  let next = doc;
+  for (const id of otherIds) if (personal[id]) next = addPersonal(next, keepId, personal[id]);
+  const wished = otherIds.some((id) => wishlistOf(doc).includes(id));
+  next = dropPersonal(next, otherIds);
+  return wished ? addToWishlist(next, keepId) : next;
 }
 
 // For the given restaurants: adds every tag in `add` (if missing) and

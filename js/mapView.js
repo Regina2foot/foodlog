@@ -95,7 +95,7 @@ const PIE_SIZE = 18;
 function pieIcon(restaurant, tagColors) {
   const colors = (restaurant.tags || []).map((t) => tagColors.get(t)).filter(Boolean);
   const dot = document.createElement("div");
-  dot.className = "pie-marker" + (restaurant.isWishlist ? " pie-wishlist" : "");
+  dot.className = "pie-marker" + (restaurant.isRated ? "" : " pie-wishlist");
   if (colors.length === 1) {
     dot.style.background = colors[0];
   } else if (colors.length > 1) {

@@ -237,6 +237,8 @@ extensions are easy, rather than requiring larger rewrites.
     "Tags…" panel (Section 9.9); the data changes are in `data.js`
   - `mapView.js` — the Map tab (Leaflet + OSM tiles, Section 9.5); not to
     be confused with `maps.js` (Google link handling)
+  - `files.js` — Phase 2: merging the shared and private file for
+    display, routing new places to the right file (Section 10)
   - `geo.js` — place search / "what's here?" lookups via Nominatim,
     rate-limited and cached, plus the address fallbacks (Section 9.6)
   - `location.js` — the user's own position, only on request (Section
@@ -758,9 +760,12 @@ save):
   **Data repo & token** · **Import from Google Maps** (9.11) · **Export
   (CSV)** (9.12) · **Archive** · **Tags** · **History**; the app version
   below them
-- **Data repo** (one field accepting `owner/repo`, a GitHub page link or a
-  clone URL — `parseRepoInput`; unparseable input is rejected; stored as
-  separate owner/repo values) and **Personal access token**; both trimmed,
+- **Shared data repo** (one field accepting `owner/repo`, a GitHub page
+  link or a clone URL — `parseRepoInput`; unparseable input is rejected;
+  stored as separate owner/repo values), optional **My private repo**
+  (Phase 2, Section 10.1; `foodlog_private_owner`/`foodlog_private_repo`;
+  an empty field removes it; must differ from the shared one) and
+  **Personal access token**; both trimmed,
   stored only in this browser (`foodlog_owner`, `foodlog_repo`,
   `foodlog_token`), with a note saying so. **Remove token** clears it. A
   401 shows "token rejected — paste it again". A missing data *repo* is an
@@ -937,10 +942,22 @@ is still fine on a phone) and more people means more write conflicts
 
 1. [x] This plan, reviewed by the user (2026-11-01)
 2. [x] Size fix (10.5)
-3. [ ] Two files: Settings fields, reading/writing/merging both, the
+3. [x] Two files: Settings fields, reading/writing/merging both, the
        Private/Shared switch, defaults for new entries and imports (works
        before the org exists — the private repo can be tested in the
-       owner's own account first)
+       owner's own account first). Built 2026-11: `files.js` (pure:
+       `mergeFiles`, `placeFacts`, `routePlan`, `applyPersonalChanges`),
+       `data.js` helpers (`setPersonal`, `addPersonal`, `dropPersonal`,
+       `addToWishlist`, `removeFromWishlist`, `mergePersonal`,
+       `mergeKeepId`; tag rename/delete also reach `personal`), per-person
+       `isRated`/`isWishlist` in `buildRestaurantViews(doc, { me })`. In
+       `app.js` every save names its file (`writeFile(target, …)`, which
+       skips writes that change nothing); `fileOf(id)` picks it. Merging
+       works within one file only (a private and a shared restaurant must
+       be made the same first). History has a Shared/Private choice. A
+       shared restaurant without any visits counts as its creator's
+       wishlist entry, so the owner's current data keeps working before
+       the migration
 4. [ ] Migration of the owner's data (10.4) — after the user has set up
        the organization (Section 7)
 5. [ ] Multi-person display and guards: names, averages, the person
@@ -1001,7 +1018,8 @@ is still fine on a phone) and more people means more write conflicts
   OSM tiles only through Leaflet's tile layer; the device position only
   through `location.js` (Geolocation API, needs HTTPS — GitHub Pages is)
 - `localStorage` keys: `foodlog_owner`, `foodlog_repo`, `foodlog_token`,
-  `foodlog_locate_area`, `foodlog_show_archived`
+  `foodlog_private_owner`, `foodlog_private_repo`, `foodlog_locate_area`,
+  `foodlog_show_archived`
 - Local testing: `python3 -m http.server` in the project folder (ES
   modules don't load from `file://`)
 - **How Claude Code checks changes here** (no Node, no browser on this

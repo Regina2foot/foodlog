@@ -175,9 +175,19 @@
       </p>
       <form id="settings-form">
         <label>
-          Data repo
+          Shared data repo
           <input type="text" id="setting-data-repo" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="owner/repo or https://github.com/owner/repo" />
         </label>
+        <label>
+          My private repo (optional)
+          <input type="text" id="setting-private-repo" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="owner/repo — only you have access" />
+        </label>
+        <p class="hint">
+          With a private repo, your wishlist, tags and notes are kept there,
+          where only you can read them; rated restaurants are shared. Leave it
+          empty to keep everything in the shared repo. Your token needs access
+          to both repos.
+        </p>
         <label>
           Personal access token
           <input type="password" id="setting-token" autocomplete="off" placeholder="fine-grained PAT" />
@@ -270,6 +280,13 @@
         Every save is kept as a version in your data repo. Look at the state
         before any save to bring back restaurants that were deleted since.
       </p>
+      <label class="history-file" id="history-file-label" hidden>
+        File
+        <select id="history-file">
+          <option value="shared">Shared</option>
+          <option value="private">My private file</option>
+        </select>
+      </label>
       <div id="history-panel"></div>
     </details>
 

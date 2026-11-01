@@ -10,6 +10,7 @@ const COLUMNS = [
   ["google_maps_url", (r) => r.google_maps_url],
   ["tags", (r) => (r.tags || []).join("; ")],
   ["note", (r) => r.note],
+  ["visibility", (r) => r.visibility || "shared"],
   ["visited_at", (r, v) => v?.visited_at],
   ["rating", (r, v) => v?.rating],
   ["comment", (r, v) => v?.comment],

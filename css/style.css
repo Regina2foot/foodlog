@@ -1084,3 +1084,24 @@ tbody tr:hover {
 .city-filter select {
   max-width: 12rem;
 }
+
+/* Restaurant page: private/shared line and the sharing choices (Section 10.3). */
+.visibility-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.6rem;
+  margin: -0.25rem 0 0.6rem;
+}
+
+.sharing-choices {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  width: 100%;
+}
+
+.sharing-choices .hint {
+  margin: 0.2rem 0;
+}
