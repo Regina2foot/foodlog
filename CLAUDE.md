@@ -194,6 +194,9 @@ data repo → complete, free version history as a backup, with no extra
 infrastructure. The app can read it back: Settings → History brings back
 deleted restaurants or a whole older version (Section 9.13).
 
+**Phase 2 (friends) changes this** — the data moves into a GitHub
+organization, plus one private repo per person: see Section 10.
+
 **Repo ownership across accounts:** If you use separate GitHub accounts
 for development vs. personal use, the app repo can be owned by a
 development-only account (it's public, so keeping your main identity off
@@ -272,9 +275,15 @@ extensions are easy, rather than requiring larger rewrites.
 - [x] Generate a fine-grained PAT: Repository access limited to
       `foodlog-data`, Permissions → Contents: Read and write. Saved
       securely (not in this repo, not shared with Claude Code)
-- [ ] (Phase 2) Give friends access to the data repo; each person
-      generates their own token — how exactly depends on the open
-      question in Section 10
+- [ ] (Phase 2, Section 10.1) Create a free GitHub organization; transfer
+      `foodlog-data` into it; set the members' base permission to "No
+      permission"; create a private repo `foodlog-private-<you>` in it
+      (empty is fine — the app creates the file); create a new
+      fine-grained token for the organization limited to those two repos
+      (Contents: read and write) and approve it if asked
+- [ ] (Phase 2) Per friend: invite them to the organization, give them
+      write access to `foodlog-data`, create `foodlog-private-<friend>`
+      with access only for them; they create their own token the same way
 - [x] **Transfer the existing Google Maps list**: superseded — this is now
       a permanent in-app feature (Settings → Import), not a one-off
       script. See Section 9.11.
@@ -793,48 +802,142 @@ save):
   by the app (e.g. "Delete 3 restaurant(s)"); these messages may contain
   restaurant names, which is fine — the data repo is private
 
-## 10. Phase 2 – multiple users (next, after a few days of real use)
+## 10. Phase 2 – friends (decided 2026-11, in progress)
 
-**Open question to resolve before inviting anyone (not yet decided):**
-fine-grained PATs cannot be used by a mere repository collaborator to
-access a repo owned by someone else's personal account — each friend's
-token would fail with the setup as originally planned (invite as
-collaborator, generate a fine-grained PAT). Two possible fixes:
-1. Move `foodlog-data` into a free GitHub Organization, and add each
-   person as an organization member (not just a repository collaborator),
-   scoped to just this one repo. Keeps the minimal-permission principle
-   from Section 4.1, but adds an org to manage.
-2. Use classic personal access tokens instead of fine-grained ones for
-   data-repo access. No collaborator limitation, but classic tokens grant
-   access to everything the account can see, not just this one repo —
-   a real trade-off against Section 4.1's minimal-permission principle.
+Up to ~10 friends add their own ratings and see each other's — while each
+person's **wishlist, tags and notes stay private**. Decided with the user
+2026-11 (option "own accounts + organization"; the alternatives — one
+shared token, or one token per friend from the owner's account — were
+rejected: no real identity, credentials on many phones, against GitHub's
+terms).
 
-Decide between these before starting Phase 2; ask if unclear which to
-pick (Section 2.1).
+### 10.1 Accounts, repos and tokens
 
-**Data file size — fix before (or early in) Phase 2.** The app reads
-`foodlog.json` through the Contents API, which returns a file's content
-only up to **1 MB**. A restaurant takes ~530 bytes, a visit ~270 bytes
-(pretty-printed), so the limit is around 1,200 restaurants with as many
-visits — quickly reached with ~10 people importing their lists. Planned
-fix: when the Contents API returns the `sha` without content, read the
-file via the Git Blobs API (`GET /repos/{owner}/{repo}/git/blobs/{sha}`,
-up to 100 MB, same token and permission) — for both the current file and
-History versions. Writing larger files through the Contents API still
-has to be verified when building it. Beyond that, every load and save
-transfers the whole file (a few MB is still fine on a phone) and more
-people means more write conflicts (handled by the retry, Section 9.15).
-Splitting the data into several files would be a larger architecture
-change (ask first).
+- A free **GitHub organization** owns the data. `foodlog-data` is moved
+  into it ("Transfer repository" keeps the whole history). The app repo
+  stays where it is (public, GitHub Pages).
+- **Why:** fine-grained tokens can't reach a repo owned by someone else's
+  *personal* account as a mere collaborator, but they can reach an
+  organization's repos as a member — and they stay limited to the repos
+  chosen, so Section 4.1's minimal permissions hold.
+- Each person has their **own GitHub account** and is an org member with
+  base permission "No permission", plus access to exactly two repos:
+  - `foodlog-data` — shared by everyone (write)
+  - `foodlog-private-<name>` — their **private repo**; only they have
+    access. Caveat, accepted: organization owners can technically open
+    every repo in the org, so friends trust the owner with their private
+    data
+- **One fine-grained token per person**: resource owner = the
+  organization, "Only select repositories" = `foodlog-data` + their own
+  private repo, permission Contents: read and write (a fine-grained token
+  works for one owner only, which is why the private repo lives in the
+  org too). The org may require the owner to approve each new token once
+- **App settings**: Shared repo, Private repo, Token — all runtime
+  settings, never hardcoded (Section 3.1). The private repo is optional:
+  without it everything is shared and the Private switch is unavailable
+  (a hint explains)
+- **Identity**: `created_by` stays the GitHub login from `GET /user`, i.e.
+  verified by GitHub — nobody can rate under someone else's name
 
-- Show who submitted a rating (`created_by`)
-- **Show an average rating** when several people have rated the same
-  restaurant — based on each person's most recent visit, not every
-  historical visit, so a restaurant one person has rated many times isn't
-  overweighted
-- Possibly a filter: "only my ratings" / "all"
-- Otherwise no structural changes needed — restaurants and visits are
-  already shared objects with `created_by`
+### 10.2 Data model
+
+- **Shared file** — `foodlog.json` in `foodlog-data`, format of Section 8,
+  but restaurants carry only *facts about the place*: name, lat/lng,
+  address, osm, google_maps_url, not_same_as, archived_at, created_by/at.
+  No tags or notes there anymore. Visits on shared restaurants are shared
+  (each with its `created_by`)
+- **Private file** — `foodlog.json` in the person's private repo, same
+  format, plus two fields:
+  - `restaurants` / `visits`: private restaurants (with their tags and
+    note inline) and their visits
+  - `wishlist`: ids of *shared* restaurants on my wishlist
+  - `personal`: `{ "<shared restaurant id>": { "tags": [...], "note":
+    "..." } }` — my own tags and note on shared restaurants
+- **On load** both files are read and merged into one set of views; each
+  view knows its `visibility` ("shared" | "private"). References to
+  shared restaurants that no longer exist are ignored
+- **Per person**:
+  - **Wishlist** = my private restaurants without visits + the shared
+    restaurants in my `wishlist` (also when friends have rated them).
+    Rating one myself takes it off my wishlist
+  - **Rated** = restaurants with at least one visit I can see (mine and
+    friends' shared ones), with a **Mine / Everyone** switch (default
+    Everyone; "Mine" = restaurants I rated). The same switch on the map
+  - **Tags and notes** are always my own; tag colours come from my tags
+  - **Rating shown** in list and map = the average of each person's
+    *latest* visit (so frequent visitors don't count more), e.g. ★★★★☆
+    with "4.3 · 3 people"; the restaurant page lists each person's latest
+    rating and all visits with names
+- Additive: an old single-user file still reads fine (tags/notes inline
+  on shared restaurants are shown until the migration, 10.4)
+
+### 10.3 Behaviour
+
+- **Defaults**: a new rated restaurant is **shared**; a wishlist place
+  ("Haven't been yet", or an import without rating) is **private**; import
+  tags become personal tags
+- **Private / Shared switch** on the restaurant page:
+  - private → shared: first checked against the shared restaurants for
+    duplicates (a friend may have added it already → offer "add my visits
+    to theirs"); then the restaurant and my visits are written to the
+    shared file and removed from the private one; my tags/note stay
+    personal
+  - shared → private: only when every visit on it is mine
+  - two files = two commits: always write the destination first, then
+    remove from the source, so a failure can duplicate but never lose data
+- **"Add to my wishlist"** on any shared restaurant (puts its id into my
+  `wishlist`); "Remove from my wishlist"
+- **Guards** (enforced by the app only — GitHub gives everyone write
+  access to the whole shared file, so these prevent mistakes, not bad
+  intent; History can undo): visits can be edited/deleted only by whoever
+  made them; anyone can correct a shared restaurant's facts (name,
+  location, archived); a shared restaurant can be deleted only when nobody
+  else has visits on it. Merging duplicates is allowed (it moves visits,
+  it doesn't change them)
+- Duplicate detection, Find locations, archive, History and CSV export
+  work across both files; changes are written to whichever file holds the
+  restaurant. History gets a Shared/Private choice; the CSV gains
+  "visibility" and "by" columns
+
+### 10.4 Migration of the current data (one-time, asks first)
+
+Today's `foodlog.json` holds only the owner's data. Once the private repo
+is set, Settings offers **"Move my wishlist, tags and notes to my private
+file"**: wishlist restaurants (no visits) move to the private file; tags
+and notes of the rated ones move into `personal`; then they're removed
+from the shared file. Destination first, shared file second; both are
+normal saves (undoable via History). Done before inviting anyone.
+
+### 10.5 Data file size
+
+The app reads `foodlog.json` through the Contents API, which returns a
+file's content only up to **1 MB**. A restaurant takes ~530 bytes, a
+visit ~270 bytes (pretty-printed), so the limit is around 1,200
+restaurants with as many visits — quickly reached with ~10 people. Fix
+(first milestone): when the Contents API returns the `sha` without
+content, read the file via the Git Blobs API
+(`GET /repos/{owner}/{repo}/git/blobs/{sha}`, up to 100 MB, same token
+and permission) — for the current file and History versions. Writing
+larger files through the Contents API has to be verified while building
+it. Beyond that, every load and save transfers the whole file (a few MB
+is still fine on a phone) and more people means more write conflicts
+(handled by the retry, Section 9.15).
+
+### 10.6 Milestones (commit after each, ask before each push)
+
+1. [ ] This plan, reviewed by the user
+2. [ ] Size fix (10.5)
+3. [ ] Two files: Settings fields, reading/writing/merging both, the
+       Private/Shared switch, defaults for new entries and imports (works
+       before the org exists — the private repo can be tested in the
+       owner's own account first)
+4. [ ] Migration of the owner's data (10.4) — after the user has set up
+       the organization (Section 7)
+5. [ ] Multi-person display and guards: names, averages, Mine/Everyone
+       (list + map), personal tags/notes, wishlist references, edit/delete
+       guards
+6. [ ] Setup guide for friends (README), first friend invited; fold the
+       final state into Sections 5, 8, 9 and retire this plan
 
 ## 11. Decisions and ideas
 
@@ -949,5 +1052,5 @@ describes the app as it is.
    token handling, but also any design or structural decision that isn't
    clearly defined here.
 2. Phase 1 is built (v1 2026-09/10, redesign v2 with restaurants + visits
-   and the map 2026-10, see Section 8). Next: improvements from real use,
-   then Phase 2 (Section 10).
+   and the map 2026-10, see Section 8), plus improvements from real use
+   (2026-10/11). Now: Phase 2, following the milestones in Section 10.6.
