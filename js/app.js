@@ -25,7 +25,7 @@ import {
 } from "./data.js";
 import { sortRestaurants, matchesMapFilter, STAR_VALUES } from "./sort.js";
 import { renderRestaurantList, renderListHeader, renderStarPicker, renderTagPicker, renderTagFilter, setStatus, renderTagChipsMulti } from "./render.js";
-import { computeTagColors } from "./tagColors.js";
+import { computeTagColors, withTagColors, setTagColor } from "./tagColors.js";
 import {
   getSettings,
   saveSettings,
@@ -55,7 +55,7 @@ import { createRestorePanel } from "./restoreView.js";
 
 // Bump on every change that gets pushed, so a device still running a
 // cached older app.js is easy to spot (shown at the bottom of Settings).
-const APP_VERSION = "2026-11-01c";
+const APP_VERSION = "2026-11-07a";
 
 // Phones have no visible error console; surface anything uncaught in the
 // status line instead of failing silently.
@@ -86,6 +86,19 @@ function twoFiles() {
 function fileOf(id) {
   const inPrivate = files.private && files.private.doc.restaurants.some((r) => r.id === id);
   return inPrivate && !files.shared.doc.restaurants.some((r) => r.id === id) ? "private" : "shared";
+}
+
+// The file that stores my tag colours: my private file once there is one
+// (tags are personal, Section 10.2), else the shared one.
+function colorFile() {
+  return twoFiles() ? "private" : "shared";
+}
+
+// What the merged document would be with `fileDoc` as `target`'s content.
+function mergedWith(target, fileDoc) {
+  return target === "shared"
+    ? mergeFiles(fileDoc, files.private ? files.private.doc : null)
+    : mergeFiles(files.shared.doc, fileDoc);
 }
 
 function currentViews() {
@@ -135,6 +148,7 @@ let cityFilter = "";
 let tagColors = new Map(); // tag -> colour, recomputed whenever the list is rendered
 let formTags = []; // New form's current tag selection
 let renamingTag = null; // tag whose rename input is open in Settings
+let colouringTag = null; // tag whose colour swatches are open in Settings
 let showDuplicates = false;
 let nameSearch = ""; // normalized, "" = no search
 const selectedIds = new Set();
@@ -168,11 +182,17 @@ async function writeFile(target, mutate, { message, maxAttempts = 2 } = {}) {
   let lastError;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const { doc: latest, sha: latestSha } = await fetchDataDoc(config);
-    const next = mutate(latest);
-    if (JSON.stringify(next) === JSON.stringify(latest)) {
+    // Tag colours (Section 9.9) are stored in one file: every tag gets its
+    // colour stored before the change (so a new tag can't shift colours
+    // that weren't stored yet) and after it (for the tags it added).
+    const keepsColors = target === colorFile();
+    const base = keepsColors ? withTagColors(latest, mergedWith(target, latest)) : latest;
+    const changed = mutate(base);
+    const next = keepsColors ? withTagColors(changed, mergedWith(target, changed)) : changed;
+    if (JSON.stringify(changed) === JSON.stringify(base) || JSON.stringify(next) === JSON.stringify(latest)) {
       files[target] = { doc: latest, sha: latestSha };
       refreshMerged();
-      return next;
+      return latest;
     }
     try {
       const result = await saveDataDoc({ ...config, doc: next, sha: latestSha, message });
@@ -318,7 +338,7 @@ function matchesNameSearch(restaurant) {
 
 function refreshList() {
   views = currentViews();
-  tagColors = computeTagColors(doc.restaurants);
+  tagColors = computeTagColors(doc);
   // Distances only exist once the user has shared their position.
   const position = lastPosition();
   if (position) {
@@ -1304,14 +1324,33 @@ function refreshTagManager() {
   const counts = new Map();
   for (const r of doc.restaurants) for (const tag of r.tags || []) counts.set(tag, (counts.get(tag) || 0) + 1);
   if (renamingTag && !counts.has(renamingTag)) renamingTag = null;
+  if (colouringTag && !counts.has(colouringTag)) colouringTag = null;
   const rerender = (tag) => {
     renamingTag = tag;
+    colouringTag = null;
     refreshTagManager();
   };
   renderTagManager(els.tagManager, counts, tagColors, {
     renaming: renamingTag,
+    colouring: colouringTag,
     onStartRename: rerender,
     onCancel: () => rerender(null),
+    onStartColor: (tag) => {
+      renamingTag = null;
+      colouringTag = tag;
+      refreshTagManager();
+    },
+    onPickColor: async (tag, color) => {
+      setStatus(els.statusMessage, "Saving…");
+      try {
+        await writeFile(colorFile(), (d) => setTagColor(d, tag, color), { message: "Change tag colour" });
+        colouringTag = null;
+        refreshList();
+        setStatus(els.statusMessage, color ? `Changed the colour of "${tag}".` : `"${tag}" has an automatic colour again.`);
+      } catch (err) {
+        setStatus(els.statusMessage, describeError(err, "Failed to save"), true);
+      }
+    },
     onRename: async (from, to) => {
       if (!to || to === from) {
         rerender(null);

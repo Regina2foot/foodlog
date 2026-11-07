@@ -342,7 +342,8 @@ save):
       "created_by": "github-username",
       "created_at": "2026-09-20T18:32:00Z"
     }
-  ]
+  ],
+  "tag_colors": { "Italian": "#e6194b", "Date night": "#3cb44b" }
 }
 ```
 
@@ -376,6 +377,10 @@ save):
 - `rating`: whole number 0–5, required — one overall rating, meanings in
   Section 13. A 0 is a real rating ("no recommendation"), not "unrated"
 - `comment`, `visited_at` (`YYYY-MM-DD`), `created_by`, `created_at`
+
+**Tag colours** (`tag_colors`, added 2026-11): tag → `#rrggbb`; only
+valid hex colours are used. Filled in automatically by the app on every
+save (Section 9.9); entries of tags no longer in use may stay.
 
 **Derived, never stored**: a restaurant with no visits is on the
 **Wishlist**; with at least one it's **Rated**, and its latest visit
@@ -520,7 +525,8 @@ save):
   that passes the filter — a small **pie in the colours of all its tags**
   (same order as the list's tag dots; grey without tags); rated = solid,
   wishlist = ring with a white middle (`L.divIcon` + CSS
-  `conic-gradient`; colours are computed values, never user text). Tap →
+  `conic-gradient`; colours are validated `#rrggbb` values, never other
+  user text). Tap →
   popup: name, stars, tag dots, **Open** (→ restaurant page) and
   **Navigate** (Google Maps directions to the marker's exact position,
   `googleDirectionsUrl`; just a link). Tapping a marker never triggers a
@@ -675,13 +681,21 @@ save):
 
 ### 9.9 Tags
 
-- **Colours** (`tagColors.js`): computed, not stored — tags are numbered
-  by first appearance (earliest `created_at` of a restaurant carrying
-  them, then by name) and spread around the colour wheel by the golden
-  angle plus a 3-step lightness cycle, so no two tags share a colour and
-  it's the same on every device. Deleting every early restaurant of a tag
-  can renumber tags and shift colours. Used for list dots, filter chips,
-  map pies, detail chips and the pickers
+- **Colours** (`tagColors.js`): stored in the data file (`tag_colors`,
+  Section 8) once assigned, so adding a tag never shifts the others and
+  every device shows the same ones (until 2026-11 they were computed from
+  the tag order, and a new tag on an old restaurant shifted all later
+  colours). Every save (`writeFile` in `app.js`) stores a colour for each
+  tag that has none — before applying the change, so not-yet-stored
+  colours are frozen as they were shown, and after it, for new tags. A
+  tag without a stored colour gets the first *automatic* colour no other
+  tag uses: automatic colours are numbered and spread around the colour
+  wheel by the golden angle plus a 3-step lightness cycle, handed out in
+  order of first appearance (earliest `created_at` of a restaurant
+  carrying the tag, then by name) — which gives exactly the colours the
+  app showed before they were stored. Used for list dots, filter chips,
+  map pies, detail chips and the pickers. Stored values are only used if
+  they're `#rrggbb` (they end up in CSS)
 - **Tag picker** (New form, Edit restaurant): checkboxes of all existing
   tags plus "+ New tag"
 - **Bulk "Tags… (n)"** on ticked rows: every tag with a checkbox showing
@@ -691,12 +705,15 @@ save):
   "all". Apply writes only the changed tags in one commit; changing the
   selection closes the panel
 - **Settings → Tags**: every tag with colour and restaurant count,
-  **Rename** and **Delete**. Renaming to an existing tag merges the two
+  **Rename** and **Delete**. Tapping a tag's dot opens 16 preset swatches
+  (`PALETTE`; ones another tag already uses have a white dot inside,
+  choosing them anyway is allowed) plus **Automatic** (back to the first
+  free automatic colour); a choice is saved right away. Renaming to an existing tag merges the two
   (confirmation first). Delete removes the tag everywhere, never the
   restaurants. The list's tag filter, the map's tag filter and the New
-  form's selection follow the change. A renamed tag keeps its colour,
-  except when it first appeared together with another tag (same
-  `created_at`, e.g. one import) — then ties are ordered by name
+  form's selection follow the change. A renamed tag takes its colour
+  along (merged into an existing tag: that tag's colour stays); a deleted
+  tag's colour is freed
 
 ### 9.10 Archive (closed restaurants)
 
@@ -873,7 +890,9 @@ terms).
     latest rating instead of the average — "show me Anna's list" when
     trusting someone's taste. It can only show what that person shared;
     their private entries stay private
-  - **Tags and notes** are always my own; tag colours come from my tags
+  - **Tags and notes** are always my own, and so are tag colours: with a
+    private file, `tag_colors` is stored there (the shared file's are
+    only a fallback until the migration)
   - **Rating shown** in list and map with "Everyone" = the average of each
     person's *latest* visit (so frequent visitors don't count more), e.g.
     ★★★★☆ with "4.3 · 3 people"; with one person selected, that person's
@@ -915,8 +934,8 @@ terms).
 Today's `foodlog.json` holds only the owner's data. Once the private repo
 is set, Settings offers **"Move my wishlist, tags and notes to my private
 file"**: wishlist restaurants (no visits) move to the private file; tags
-and notes of the rated ones move into `personal`; then they're removed
-from the shared file. Destination first, shared file second; both are
+and notes of the rated ones move into `personal`, `tag_colors` moves
+along; then they're removed from the shared file. Destination first, shared file second; both are
 normal saves (undoable via History). Done before inviting anyone.
 
 ### 10.5 Data file size

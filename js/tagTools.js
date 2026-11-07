@@ -5,6 +5,7 @@
 // data.js. Tag names are always set via textContent (Section 4.1).
 
 import { buildTagDot, buildNewTagControl } from "./render.js";
+import { PALETTE } from "./tagColors.js";
 
 function el(tag, props = {}, children = []) {
   const node = document.createElement(tag);
@@ -21,9 +22,35 @@ function button(text, onClick, className = "") {
 
 const byName = (a, b) => a.localeCompare(b);
 
+// The colour swatches under a tag in Settings (PALETTE, plus "Automatic").
+// Swatches another tag already uses are marked, so two tags don't end up
+// looking alike by accident (choosing one anyway is allowed).
+function buildSwatches(tag, colors, { onPickColor, onCancel }) {
+  const current = (colors.get(tag) || "").toLowerCase();
+  const usedBy = new Map();
+  for (const [other, color] of colors) if (other !== tag) usedBy.set(color.toLowerCase(), other);
+  const row = el("div", { className: "tag-swatches" });
+  for (const color of PALETTE) {
+    const other = usedBy.get(color);
+    const swatch = button("", () => onPickColor(tag, color), "tag-swatch");
+    swatch.style.background = color;
+    if (color === current) swatch.classList.add("is-current");
+    if (other) swatch.classList.add("is-used");
+    swatch.setAttribute("aria-label", other ? `${color} (used by ${other})` : color);
+    swatch.title = other ? `Used by ${other}` : "";
+    row.appendChild(swatch);
+  }
+  return el("div", { className: "tag-swatch-panel" }, [
+    row,
+    el("p", { className: "hint", textContent: "Tap a colour. A dot inside = already used by another tag." }),
+    el("div", { className: "form-actions" }, [button("Automatic", () => onPickColor(tag, null)), button("Cancel", onCancel)]),
+  ]);
+}
+
 // tagCounts: Map of tag → number of restaurants carrying it. `renaming` is
-// the tag whose row currently shows the rename input (or null).
-export function renderTagManager(container, tagCounts, colors, { renaming, onStartRename, onRename, onDelete, onCancel }) {
+// the tag whose row currently shows the rename input, `colouring` the one
+// whose colour swatches are open (or null). Tapping a tag's dot opens them.
+export function renderTagManager(container, tagCounts, colors, { renaming, colouring, onStartRename, onRename, onDelete, onCancel, onStartColor, onPickColor }) {
   container.textContent = "";
   const tags = [...tagCounts.keys()].sort(byName);
   if (tags.length === 0) {
@@ -48,17 +75,22 @@ export function renderTagManager(container, tagCounts, colors, { renaming, onSta
       item.append(buildTagDot(tag, colors), input, button("Save", save), button("Cancel", onCancel));
       requestAnimationFrame(() => input.focus());
     } else {
+      const dotButton = button("", () => onStartColor(tag === colouring ? null : tag), "tag-color-btn");
+      dotButton.appendChild(buildTagDot(tag, colors));
+      dotButton.setAttribute("aria-label", `Change the colour of ${tag}`);
       item.append(
-        buildTagDot(tag, colors),
+        dotButton,
         el("span", { className: "tag-manager-name", textContent: tag }),
         el("span", { className: "hint", textContent: `(${tagCounts.get(tag)})` }),
         button("Rename", () => onStartRename(tag)),
         button("Delete", () => onDelete(tag), "danger-btn")
       );
     }
+    if (tag === colouring && tag !== renaming) item.appendChild(buildSwatches(tag, colors, { onPickColor, onCancel }));
     list.appendChild(item);
   }
   container.appendChild(list);
+  container.appendChild(el("p", { className: "hint", textContent: "Tap a tag's dot to change its colour." }));
 }
 
 // Tag editor for several restaurants at once. Each tag's checkbox shows

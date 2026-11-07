@@ -3,6 +3,8 @@
 // Pure functions only — every change returns a new document, so the
 // write-conflict retry can re-apply a change to freshly fetched data.
 
+import { renameTagColor, deleteTagColor } from "./tagColors.js";
+
 export const DATA_FILE = "foodlog.json";
 export const DATA_VERSION = 2;
 
@@ -184,14 +186,14 @@ export function markRestaurantsDifferent(doc, ids) {
 
 // Renames a tag on every restaurant. Renaming to a tag that already exists
 // merges the two (a restaurant never ends up with the same tag twice). The
-// tag keeps its place in each list, so its colour usually stays the same.
+// tag keeps its place in each list and takes its stored colour along.
 // Also applies to my personal tags on shared restaurants (`personal` in
 // the private file, Section 10.2).
 export function renameTag(doc, from, to) {
   const rename = (tags) => [...new Set(tags.map((t) => (t === from ? to : t)))];
   return mapPersonal(
     {
-      ...doc,
+      ...renameTagColor(doc, from, to),
       restaurants: doc.restaurants.map((r) => ((r.tags || []).includes(from) ? { ...r, tags: rename(r.tags) } : r)),
     },
     (entry) => ((entry.tags || []).includes(from) ? { ...entry, tags: rename(entry.tags) } : entry)
@@ -199,12 +201,12 @@ export function renameTag(doc, from, to) {
 }
 
 // Removes a tag from every restaurant (the restaurants themselves stay),
-// including my personal tags on shared restaurants.
+// including my personal tags on shared restaurants. Its colour is freed.
 export function deleteTag(doc, tag) {
   const drop = (tags) => tags.filter((t) => t !== tag);
   return mapPersonal(
     {
-      ...doc,
+      ...deleteTagColor(doc, tag),
       restaurants: doc.restaurants.map((r) => ((r.tags || []).includes(tag) ? { ...r, tags: drop(r.tags) } : r)),
     },
     (entry) => ((entry.tags || []).includes(tag) ? { ...entry, tags: drop(entry.tags) } : entry)

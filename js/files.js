@@ -7,12 +7,14 @@
 import { addPersonal, addToWishlist, removeFromWishlist } from "./data.js";
 
 const isPlainObject = (x) => Boolean(x) && typeof x === "object" && !Array.isArray(x);
+const tagColorsOf = (doc) => (isPlainObject(doc.tag_colors) ? doc.tag_colors : {});
 
 // One document for display. Shared restaurants get my personal tags and
 // note when I have some (else whatever is stored on them — the old
 // single-user format, until the migration); private restaurants keep
 // theirs. Each restaurant is marked with `visibility`, and shared ones on
-// my wishlist with `onMyWishlist`. Visits come from both files.
+// my wishlist with `onMyWishlist`. Visits come from both files; tag colours
+// (Section 9.9) from both, mine first.
 export function mergeFiles(shared, priv) {
   if (!priv) {
     return { ...shared, restaurants: shared.restaurants.map((r) => ({ ...r, visibility: "shared" })) };
@@ -22,6 +24,9 @@ export function mergeFiles(shared, priv) {
   const sharedIds = new Set(shared.restaurants.map((r) => r.id));
   return {
     version: shared.version,
+    // My colours win; the shared file's are only a fallback (the old
+    // single-user format, until the migration).
+    tag_colors: { ...tagColorsOf(shared), ...tagColorsOf(priv) },
     restaurants: [
       ...shared.restaurants.map((r) => {
         const mine = personal[r.id];
