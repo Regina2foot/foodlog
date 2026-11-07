@@ -5,7 +5,7 @@
 // data.js. Tag names are always set via textContent (Section 4.1).
 
 import { buildTagDot, buildNewTagControl } from "./render.js";
-import { PALETTE } from "./tagColors.js";
+import { PALETTE, colorsLookAlike } from "./tagColors.js";
 
 function el(tag, props = {}, children = []) {
   const node = document.createElement(tag);
@@ -23,15 +23,14 @@ function button(text, onClick, className = "") {
 const byName = (a, b) => a.localeCompare(b);
 
 // The colour swatches under a tag in Settings (PALETTE, plus "Automatic").
-// Swatches another tag already uses are marked, so two tags don't end up
-// looking alike by accident (choosing one anyway is allowed).
+// Swatches that look like another tag's colour are marked, so two tags
+// don't end up looking alike by accident (choosing one anyway is allowed).
 function buildSwatches(tag, colors, { onPickColor, onCancel }) {
   const current = (colors.get(tag) || "").toLowerCase();
-  const usedBy = new Map();
-  for (const [other, color] of colors) if (other !== tag) usedBy.set(color.toLowerCase(), other);
+  const others = [...colors].filter(([other]) => other !== tag);
   const row = el("div", { className: "tag-swatches" });
   for (const color of PALETTE) {
-    const other = usedBy.get(color);
+    const other = (others.find(([, c]) => colorsLookAlike(c.toLowerCase(), color)) || [])[0];
     const swatch = button("", () => onPickColor(tag, color), "tag-swatch");
     swatch.style.background = color;
     if (color === current) swatch.classList.add("is-current");
@@ -42,7 +41,7 @@ function buildSwatches(tag, colors, { onPickColor, onCancel }) {
   }
   return el("div", { className: "tag-swatch-panel" }, [
     row,
-    el("p", { className: "hint", textContent: "Tap a colour. A dot inside = already used by another tag." }),
+    el("p", { className: "hint", textContent: "Tap a colour. A dot inside = another tag already has this (or a very similar) colour." }),
     el("div", { className: "form-actions" }, [button("Automatic", () => onPickColor(tag, null)), button("Cancel", onCancel)]),
   ]);
 }

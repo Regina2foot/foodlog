@@ -55,7 +55,7 @@ import { createRestorePanel } from "./restoreView.js";
 
 // Bump on every change that gets pushed, so a device still running a
 // cached older app.js is easy to spot (shown at the bottom of Settings).
-const APP_VERSION = "2026-11-07a";
+const APP_VERSION = "2026-11-07b";
 
 // Phones have no visible error console; surface anything uncaught in the
 // status line instead of failing silently.

@@ -1,13 +1,12 @@
 // One distinct colour per tag (CLAUDE.md Section 9.9). Colours are stored in
 // the data file (`tag_colors`: { tag: "#rrggbb" }) once assigned, so adding
 // a tag never shifts the others and every device shows the same ones.
-// A tag without a stored colour gets the first free automatic colour:
-// automatic colours are numbered, spread around the colour wheel by the
-// golden angle, and handed out to such tags in the order they first
-// appeared (earliest created_at of a restaurant carrying them, then by
-// name). Before anything was stored this gives exactly the colours the app
-// always computed, so storing them for the first time changes nothing you
-// can see. The user can pick another colour in Settings → Tags (PALETTE).
+// A tag without a stored colour gets the first automatic colour that
+// doesn't look like one already in use (colorsLookAlike): first the preset
+// swatches (PALETTE, in AUTO_ORDER), after those colours spread around the
+// colour wheel by the golden angle. Such tags are served in the order they
+// first appeared (earliest created_at of a restaurant carrying them, then
+// by name). The user can pick another colour in Settings → Tags.
 const GOLDEN_ANGLE = 137.508;
 const LIGHTNESS = [48, 34, 62]; // close hues also differ in lightness
 
@@ -20,6 +19,34 @@ export const PALETTE = [
   "#000075", "#911eb4", "#9d7bd8", "#f032e6",
   "#e57fa8", "#800000", "#9a6324", "#808000",
 ];
+
+// The same swatches in the order automatic colours use them: each next
+// one clearly different from the ones before.
+const AUTO_ORDER = [
+  "#e6194b", "#4363d8", "#3cb44b", "#f58231",
+  "#911eb4", "#1fa8c9", "#d4a017", "#f032e6",
+  "#469990", "#9a6324", "#000075", "#8fbf26",
+  "#800000", "#9d7bd8", "#808000", "#e57fa8",
+];
+
+// How different two colours look ("redmean" weighted RGB distance; 0 =
+// identical, ~765 = black vs white). Below SIMILAR they're easy to mix up
+// on a small dot. The swatches are all at least 90 apart.
+const SIMILAR = 85;
+
+function rgbOf(hex) {
+  return [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+}
+
+export function colorsLookAlike(a, b) {
+  const [r1, g1, b1] = rgbOf(a);
+  const [r2, g2, b2] = rgbOf(b);
+  const rm = (r1 + r2) / 2;
+  const dr = r1 - r2;
+  const dg = g1 - g2;
+  const db = b1 - b2;
+  return Math.sqrt((2 + rm / 256) * dr * dr + 4 * dg * dg + (2 + (255 - rm) / 256) * db * db) < SIMILAR;
+}
 
 // Only plain hex colours are used from the file — the values end up in CSS
 // (and the map markers' HTML), so anything else is ignored.
@@ -37,8 +64,19 @@ function hslToHex(h, s, l) {
   return `#${channel(0)}${channel(8)}${channel(4)}`;
 }
 
-export function automaticColor(i) {
+function wheelColor(i) {
   return hslToHex(Math.round((i * GOLDEN_ANGLE) % 360), 65, LIGHTNESS[i % 3]);
+}
+
+// The first automatic colour that doesn't look like any of `used`. With
+// very many tags nothing may be left that's clearly different; then the
+// first wheel colour not used exactly.
+function freeAutomaticColor(used) {
+  const free = (c) => !used.some((u) => colorsLookAlike(u, c));
+  const fromPalette = AUTO_ORDER.find(free);
+  if (fromPalette) return fromPalette;
+  for (let i = 0; i < 360; i++) if (free(wheelColor(i))) return wheelColor(i);
+  for (let i = 0; ; i++) if (!used.includes(wheelColor(i))) return wheelColor(i);
 }
 
 // The valid stored colours of a document, as a Map.
@@ -49,7 +87,7 @@ export function storedTagColors(doc) {
 }
 
 // Every tag of the document's restaurants → its colour (stored, or the
-// first free automatic one).
+// first automatic one that doesn't look like a colour in use).
 export function computeTagColors(doc) {
   const firstSeen = new Map();
   for (const r of doc.restaurants || []) {
@@ -63,17 +101,15 @@ export function computeTagColors(doc) {
     .map(([tag]) => tag);
 
   const stored = storedTagColors(doc);
-  const used = new Set([...stored.values()].map((c) => c.toLowerCase()));
+  const used = ordered.filter((tag) => stored.has(tag)).map((tag) => stored.get(tag).toLowerCase());
   const colors = new Map();
-  let next = 0;
   for (const tag of ordered) {
     if (stored.has(tag)) {
       colors.set(tag, stored.get(tag));
       continue;
     }
-    while (used.has(automaticColor(next))) next++;
-    const color = automaticColor(next++);
-    used.add(color);
+    const color = freeAutomaticColor(used);
+    used.push(color);
     colors.set(tag, color);
   }
   return colors;
@@ -90,7 +126,7 @@ export function withTagColors(target, all) {
 }
 
 // Sets a tag's colour (`null` = back to automatic: the entry is removed and
-// the next save hands it the first free automatic colour).
+// the same save hands it the first automatic colour not like the others).
 export function setTagColor(doc, tag, color) {
   const colors = storedTagColors(doc);
   if (color === null) colors.delete(tag);

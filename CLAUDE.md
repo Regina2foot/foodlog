@@ -688,14 +688,16 @@ save (Section 9.9); entries of tags no longer in use may stay.
   colours). Every save (`writeFile` in `app.js`) stores a colour for each
   tag that has none — before applying the change, so not-yet-stored
   colours are frozen as they were shown, and after it, for new tags. A
-  tag without a stored colour gets the first *automatic* colour no other
-  tag uses: automatic colours are numbered and spread around the colour
-  wheel by the golden angle plus a 3-step lightness cycle, handed out in
-  order of first appearance (earliest `created_at` of a restaurant
-  carrying the tag, then by name) — which gives exactly the colours the
-  app showed before they were stored. Used for list dots, filter chips,
-  map pies, detail chips and the pickers. Stored values are only used if
-  they're `#rrggbb` (they end up in CSS)
+  tag without a stored colour gets the first **automatic** colour that
+  doesn't *look like* one already in use (`colorsLookAlike`: "redmean"
+  RGB distance below 85; the swatches are all ≥90 apart): first the 16
+  preset swatches in a high-contrast order (`AUTO_ORDER`), after those
+  colours spread around the colour wheel by the golden angle plus a 3-step
+  lightness cycle. Tags without a colour are served in order of first
+  appearance (earliest `created_at` of a restaurant carrying the tag, then
+  by name). Used for list dots, filter chips, map pies, detail chips and
+  the pickers. Stored values are only used if they're `#rrggbb` (they end
+  up in CSS)
 - **Tag picker** (New form, Edit restaurant): checkboxes of all existing
   tags plus "+ New tag"
 - **Bulk "Tags… (n)"** on ticked rows: every tag with a checkbox showing
@@ -706,9 +708,9 @@ save (Section 9.9); entries of tags no longer in use may stay.
   selection closes the panel
 - **Settings → Tags**: every tag with colour and restaurant count,
   **Rename** and **Delete**. Tapping a tag's dot opens 16 preset swatches
-  (`PALETTE`; ones another tag already uses have a white dot inside,
-  choosing them anyway is allowed) plus **Automatic** (back to the first
-  free automatic colour); a choice is saved right away. Renaming to an existing tag merges the two
+  (`PALETTE`; ones that look like another tag's colour have a white dot
+  inside, choosing them anyway is allowed) plus **Automatic** (the first
+  automatic colour unlike all others); a choice is saved right away. Renaming to an existing tag merges the two
   (confirmation first). Delete removes the tag everywhere, never the
   restaurants. The list's tag filter, the map's tag filter and the New
   form's selection follow the change. A renamed tag takes its colour
