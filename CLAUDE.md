@@ -427,7 +427,10 @@ save (Section 9.9); entries of tags no longer in use may stay.
   CSS variables at the top of `style.css`; always this light theme (no
   dark mode). Logo (`icons/logo.svg`): a wine-red fork and a pair of
   chopsticks standing side by side on butter yellow; the PNG icons and `favicon.ico` are rendered
-  from it (home-screen icons square, as phones round them themselves)
+  from it (home-screen icons square, as phones round them themselves;
+  plus `icon-maskable-*.png`, `"purpose": "maskable"` in the manifest,
+  with the drawing shrunk into the central safe circle — without them
+  Android shows the icon small on a white circle)
 - Installable on a phone's home screen (`manifest.json`, icons; no service
   worker — see Section 13)
 
