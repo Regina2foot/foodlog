@@ -421,6 +421,13 @@ save (Section 9.9); entries of tags no longer in use may stay.
   replaces it), so back returns to the list, and back from the list leaves
   the app. In-app "back to list" actions use `history.back()` so history
   stays in step
+- **Look** (2026-11): wine-red text (`#722f37`) on butter yellow
+  (`#fdf0b2`), light cream (`#fff9dd`) for input fields, buttons and map
+  popups; filled stars, lines and danger buttons in wine red. Defined as
+  CSS variables at the top of `style.css`; always this light theme (no
+  dark mode). Logo (`icons/logo.svg`): a wine-red plate with fork and
+  knife on butter yellow; the PNG icons and `favicon.ico` are rendered
+  from it (home-screen icons square, as phones round them themselves)
 - Installable on a phone's home screen (`manifest.json`, icons; no service
   worker — see Section 13)
 

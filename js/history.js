@@ -101,7 +101,7 @@ export function buildHistoryChart(visits) {
     0,
     5,
     rated.map((v) => v.rating),
-    "#d4820a"
+    "#722f37"
   );
 
   // Date labels under the x-axis; thinned out so they never overlap.

@@ -1,10 +1,15 @@
 :root {
-  color-scheme: light dark;
-  --border: #ccc;
-  --accent: #d4820a;
-  --bg-panel: rgba(127, 127, 127, 0.06);
-  --star-filled: #ffb400;
-  --star-empty: #d8d8d8;
+  /* Theme (2026-11): wine-red text on butter yellow, always (no dark mode). */
+  color-scheme: light;
+  --wine: #722f37;
+  --butter: #fdf0b2;
+  --cream: #fff9dd; /* input fields and buttons */
+  --border: rgba(114, 47, 55, 0.35);
+  --accent: var(--wine);
+  --bg-panel: rgba(114, 47, 55, 0.06);
+  --star-filled: var(--wine);
+  --star-empty: rgba(114, 47, 55, 0.2);
+  accent-color: var(--wine); /* checkboxes */
 }
 
 * {
@@ -15,6 +20,47 @@
    hidden attribute and stays visible. */
 [hidden] {
   display: none !important;
+}
+
+html,
+body {
+  background: var(--butter);
+  color: var(--wine);
+}
+
+/* Plain buttons and fields in the theme; buttons with their own class
+   (tabs, icons, swatches…) override this. */
+button {
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--wine);
+  border-radius: 4px;
+  background: var(--cream);
+  color: var(--wine);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+input,
+select,
+textarea {
+  color: var(--wine);
+}
+
+input[type="text"],
+input[type="password"],
+input[type="date"],
+input[type="search"],
+select,
+textarea {
+  background: var(--cream);
+  border: 1px solid var(--border);
+  border-radius: 4px;
 }
 
 body {
@@ -76,6 +122,7 @@ h2 {
   border: none;
   border-bottom: 3px solid transparent;
   margin-bottom: -2px;
+  border-radius: 0;
   background: transparent;
   color: inherit;
   font-size: 0.9rem;
@@ -119,7 +166,7 @@ form select {
   font-size: 1rem;
   border: 1px solid var(--border);
   border-radius: 4px;
-  background: transparent;
+  background: var(--cream);
   color: inherit;
 }
 
@@ -604,9 +651,9 @@ tbody tr:hover {
 
 .danger-btn,
 #btn-delete-selected {
-  background: #c0392b;
-  color: #fff;
-  border-color: #c0392b;
+  background: var(--wine);
+  color: var(--butter);
+  border-color: var(--wine);
 }
 
 .map-summary {
@@ -714,10 +761,11 @@ tbody tr:hover {
   gap: 0.5rem;
 }
 
-/* Leaflet's popup is always light; keep its text dark in dark mode too. */
+/* Leaflet's popups in the theme. */
 .leaflet-popup-content-wrapper,
 .leaflet-popup-tip {
-  color: #222;
+  background: var(--cream);
+  color: var(--wine);
 }
 
 .map-search {
@@ -1068,7 +1116,7 @@ tbody tr:hover {
   border: none;
   border-radius: 4px;
   background: #fff;
-  color: #333;
+  color: var(--wine);
   font-size: 18px;
   line-height: 30px;
   cursor: pointer;

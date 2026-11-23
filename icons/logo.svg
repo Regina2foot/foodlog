@@ -1,13 +1,16 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="Foodlog logo">
-  <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#e89b14" />
-      <stop offset="100%" stop-color="#a84f06" />
-    </linearGradient>
-  </defs>
-  <rect x="0" y="0" width="100" height="100" rx="22" fill="url(#bg)" />
-  <polygon
-    fill="#ffffff"
-    points="50,20 56.74,40.73 78.53,40.73 60.90,53.54 67.63,74.27 50,61.46 32.37,74.27 39.10,53.54 21.47,40.73 43.26,40.73"
-  />
+  <rect x="0" y="0" width="100" height="100" rx="22" fill="#fdf0b2" />
+  <g fill="#722f37">
+    <!-- plate, with its rim -->
+    <circle cx="50" cy="50" r="28" />
+    <circle cx="50" cy="50" r="19" fill="none" stroke="#fdf0b2" stroke-width="2.5" />
+    <!-- fork -->
+    <rect x="9" y="18" width="2.4" height="20" rx="1.2" />
+    <rect x="13.3" y="18" width="2.4" height="20" rx="1.2" />
+    <rect x="17.6" y="18" width="2.4" height="20" rx="1.2" />
+    <path d="M9 34 h11 v3 a5.5 5.5 0 0 1 -3.5 5.1 v39.4 a2 2 0 0 1 -4 0 v-39.4 a5.5 5.5 0 0 1 -3.5 -5.1 z" />
+    <!-- knife -->
+    <path d="M85 18 c4.5 1 6.5 9 6.5 18 v14 h-6.5 z" />
+    <rect x="85" y="48" width="4.5" height="35.5" rx="2.25" />
+  </g>
 </svg>
