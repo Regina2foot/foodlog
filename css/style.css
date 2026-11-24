@@ -1216,3 +1216,16 @@ tbody tr:hover {
   border-radius: 50%;
   background: #fff;
 }
+
+/* Settings: the one-time "Move to my private repo" box (Phase 2). */
+.migrate-box {
+  margin-top: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--bg-panel);
+}
+
+.migrate-box .hint {
+  margin: 0.3rem 0 0.5rem;
+}

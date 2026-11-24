@@ -277,7 +277,7 @@ extensions are easy, rather than requiring larger rewrites.
 - [x] Generate a fine-grained PAT: Repository access limited to
       `foodlog-data`, Permissions → Contents: Read and write. Saved
       securely (not in this repo, not shared with Claude Code)
-- [ ] (Phase 2, Section 10.1) Create a free GitHub organization; transfer
+- [x] (Phase 2, Section 10.1, done 2026-11) Create a free GitHub organization; transfer
       `foodlog-data` into it; set the members' base permission to "No
       permission"; create a private repo `foodlog-private-<you>` in it
       (empty is fine — the app creates the file); create a new
@@ -800,6 +800,8 @@ save (Section 9.9); entries of tags no longer in use may stay.
   401 shows "token rejected — paste it again". A missing data *repo* is an
   error (so a typo never looks like an empty list); a missing *file* is a
   normal fresh start
+- With a private repo and old data still in the shared one: the one-time
+  **Move to my private repo** box (Section 10.4)
 - **Archive** checkbox (9.10) and **Tags** (9.9)
 - **History** (`restoreView.js`): every save is a commit in the data repo.
   "Show recent saves" lists them (date, commit message; 30 per page,
@@ -944,11 +946,29 @@ terms).
 ### 10.4 Migration of the current data (one-time, asks first)
 
 Today's `foodlog.json` holds only the owner's data. Once the private repo
-is set, Settings offers **"Move my wishlist, tags and notes to my private
-file"**: wishlist restaurants (no visits) move to the private file; tags
-and notes of the rated ones move into `personal`, `tag_colors` moves
-along; then they're removed from the shared file. Destination first, shared file second; both are
-normal saves (undoable via History). Done before inviting anyone.
+is set and the app finds something to move, Settings → Data repo & token
+shows a box **"Move to my private repo"** (and the status line after
+loading points to it): it names what's still in the shared repo — "your
+wishlist (n places), your tags and notes on m rated restaurants and your
+tag colours" — and moves it after a confirmation. Built 2026-11 as pure
+functions in `files.js`:
+- `migrationPlan(shared, me)`: wishlist = shared restaurants without
+  visits created by me (or with no/"unknown" creator — never a friend's;
+  those are only counted, "stay shared"); tagged = the others with inline
+  tags/note; colours = the shared file's `tag_colors`
+- save 1, private file (`migratePrivate`): the wishlist restaurants move
+  in with the tags/note *shown* for them; every tagged shared restaurant
+  without a personal entry gets one from its inline tags/note (an
+  existing personal entry wins — it's what was shown); `tag_colors`
+  united, the private file's winning
+- save 2, shared file (`migrateShared`): removes only what the private
+  file now holds — wishlist restaurants present there (and still without
+  visits), inline tags/note where a personal entry exists, colours the
+  private file has. So nothing can be lost; after an interruption the box
+  stays and the move is simply run again (both steps are idempotent)
+- the shared file is re-read right before; both are normal saves
+  (undoable via History). The app looks exactly the same afterwards
+  (checked by tests). Done before inviting anyone
 
 ### 10.5 Data file size
 
@@ -989,8 +1009,8 @@ is still fine on a phone) and more people means more write conflicts
        shared restaurant without any visits counts as its creator's
        wishlist entry, so the owner's current data keeps working before
        the migration
-4. [ ] Migration of the owner's data (10.4) — after the user has set up
-       the organization (Section 7)
+4. [x] Migration of the owner's data (10.4) — organization set up by the
+       user 2026-11 (Section 7); built 2026-11-24
 5. [ ] Multi-person display and guards: names, averages, the person
        selector (list + map), personal tags/notes, wishlist references,
        edit/delete guards

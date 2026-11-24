@@ -4,7 +4,7 @@
 // Without a private file (`priv` = null) everything is shared and behaves
 // exactly like the single-user app.
 
-import { addPersonal, addToWishlist, removeFromWishlist } from "./data.js";
+import { addPersonal, addToWishlist, removeFromWishlist, setPersonal, dropPersonal } from "./data.js";
 
 const isPlainObject = (x) => Boolean(x) && typeof x === "object" && !Array.isArray(x);
 const tagColorsOf = (doc) => (isPlainObject(doc.tag_colors) ? doc.tag_colors : {});
@@ -98,4 +98,82 @@ export function applyPersonalChanges(priv, { personal = [], wish = [], unwish = 
   for (const entry of personal) next = addPersonal(next, entry.id, entry);
   for (const id of wish) next = addToWishlist(next, id);
   return unwish.length ? removeFromWishlist(next, unwish) : next;
+}
+
+// --- One-time move of the owner's old single-user data (Section 10.4) -----
+// Before the private file existed, the shared file held everything: my
+// wishlist (restaurants without visits), my tags and notes inline on every
+// restaurant, and my tag colours. The move puts all of that into my private
+// file, so friends only see the places I rated and my visits. What the app
+// shows doesn't change: a shared restaurant that already has a personal
+// entry keeps it (that's what's shown), the others get one from their
+// inline tags/note.
+
+const hasInline = (r) => (Array.isArray(r.tags) && r.tags.length > 0) || Boolean(r.note);
+const isOldWishlist = (shared, me) => {
+  const visited = new Set(shared.visits.map((v) => v.restaurant_id));
+  return (r) => !visited.has(r.id) && (!r.created_by || r.created_by === "unknown" || r.created_by === me);
+};
+
+// What's still to move: { wishlist: restaurants to move, tagged: shared
+// restaurants with tags/note inline, colors: whether the shared file holds
+// tag colours, foreign: number of places without visits added by someone
+// else }. Only my own wishlist entries (created_by me) — a friend's
+// shared place without visits is never taken.
+export function migrationPlan(shared, me) {
+  const wished = isOldWishlist(shared, me);
+  const wishlist = shared.restaurants.filter(wished);
+  const tagged = shared.restaurants.filter((r) => !wished(r) && hasInline(r));
+  const colors = isPlainObject(shared.tag_colors) && Object.keys(shared.tag_colors).length > 0;
+  // Places without visits added by another account stay shared (counted
+  // only so the app can say so).
+  const visited = new Set(shared.visits.map((v) => v.restaurant_id));
+  const foreign = shared.restaurants.filter((r) => !visited.has(r.id) && !wished(r)).length;
+  return { wishlist, tagged, colors, foreign, needed: wishlist.length > 0 || tagged.length > 0 || colors };
+}
+
+// Save 1 — the private file gets: the wishlist restaurants (with the tags
+// and note shown for them), a personal entry for every tagged shared
+// restaurant that has none yet, and the shared file's tag colours (mine
+// win where both have one). Safe to repeat: nothing is added twice.
+export function migratePrivate(priv, shared, me) {
+  const { wishlist, tagged } = migrationPlan(shared, me);
+  const personal = isPlainObject(priv.personal) ? priv.personal : {};
+  const have = new Set(priv.restaurants.map((r) => r.id));
+  const moved = wishlist
+    .filter((r) => !have.has(r.id))
+    .map((r) => {
+      const mine = personal[r.id];
+      return mine ? { ...r, tags: mine.tags || [], note: mine.note || "" } : { ...r };
+    });
+  let next = dropPersonal({ ...priv, restaurants: [...priv.restaurants, ...moved] }, wishlist.map((r) => r.id));
+  for (const r of tagged) {
+    if (!personal[r.id]) next = setPersonal(next, r.id, { tags: r.tags || [], note: r.note || "" });
+  }
+  const colors = { ...tagColorsOf(shared), ...tagColorsOf(priv) };
+  return Object.keys(colors).length ? { ...next, tag_colors: colors } : next;
+}
+
+// Save 2 — the shared file loses only what the private file (as saved in
+// step 1) now really holds: wishlist restaurants that are in it (and still
+// have no visits), tags/note of restaurants with a personal entry, and the
+// tag colours it has. Anything not covered stays, so a failed or partial
+// first save can never lose data — the move can simply be run again.
+export function migrateShared(shared, priv, me) {
+  const inPrivate = new Set(priv.restaurants.map((r) => r.id));
+  const personal = isPlainObject(priv.personal) ? priv.personal : {};
+  const wished = isOldWishlist(shared, me);
+  const restaurants = shared.restaurants
+    .filter((r) => !(wished(r) && inPrivate.has(r.id)))
+    .map((r) => {
+      if (!hasInline(r) || !personal[r.id]) return r;
+      const { tags, note, ...rest } = r;
+      return rest;
+    });
+  const next = { ...shared, restaurants };
+  if (!isPlainObject(shared.tag_colors)) return next;
+  const privColors = tagColorsOf(priv);
+  const left = Object.entries(shared.tag_colors).filter(([tag]) => !Object.prototype.hasOwnProperty.call(privColors, tag));
+  const { tag_colors, ...rest } = next;
+  return left.length ? { ...rest, tag_colors: Object.fromEntries(left) } : rest;
 }

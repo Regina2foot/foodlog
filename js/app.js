@@ -39,7 +39,7 @@ import {
   savePrivateRepo,
   hasPrivateRepo,
 } from "./settings.js";
-import { mergeFiles, placeFacts, routePlan, applyPersonalChanges } from "./files.js";
+import { mergeFiles, placeFacts, routePlan, applyPersonalChanges, migrationPlan, migratePrivate, migrateShared } from "./files.js";
 import { fetchDataDoc, saveDataDoc, fetchCurrentUser, fetchDataHistory, fetchDataDocAt, GitHubApiError } from "./api.js";
 import { renderRestaurantDetail } from "./history.js";
 import { openMapsUrl, googleDirectionsUrl } from "./maps.js";
@@ -55,7 +55,7 @@ import { createRestorePanel } from "./restoreView.js";
 
 // Bump on every change that gets pushed, so a device still running a
 // cached older app.js is easy to spot (shown at the bottom of Settings).
-const APP_VERSION = "2026-11-23b";
+const APP_VERSION = "2026-11-24a";
 
 // Phones have no visible error console; surface anything uncaught in the
 // status line instead of failing silently.
@@ -233,7 +233,8 @@ async function loadData() {
       sharedResult.isNew && !privateCount
         ? `No data yet — your first save creates ${DATA_FILE} in your data repo.`
         : `Loaded ${doc.restaurants.length} restaurant(s), ${doc.visits.length} visit(s)` +
-            (files.private ? ` (${privateCount} private).` : ".")
+            (files.private ? ` (${privateCount} private).` : ".") +
+            (pendingMigration() ? " Your wishlist, tags and notes are still in the shared repo — see Settings → Data repo & token." : "")
     );
   } catch (err) {
     setStatus(els.statusMessage, describeError(err, "Failed to load"), true);
@@ -276,6 +277,9 @@ const els = {
   privateRepoInput: document.getElementById("setting-private-repo"),
   tokenInput: document.getElementById("setting-token"),
   removeTokenButton: document.getElementById("btn-remove-token"),
+  migrateBox: document.getElementById("migrate-box"),
+  migrateText: document.getElementById("migrate-text"),
+  migrateButton: document.getElementById("btn-migrate"),
   ratingForm: document.getElementById("rating-form"),
   locationHint: document.getElementById("field-location-hint"),
   nameInput: document.getElementById("field-name"),
@@ -425,6 +429,7 @@ function refreshList() {
   updateBulkActionButtons();
   refreshTagPicker();
   refreshTagManager();
+  refreshMigrateBox();
   refreshMap();
 }
 
@@ -948,6 +953,77 @@ async function makePrivate(id) {
     { message: "Make a restaurant private" }
   );
   await writeFile("shared", (d) => deleteRestaurants(d, [id]), { message: "Make a restaurant private" });
+}
+
+// --- One-time move of my old data into the private file (Section 10.4) ---
+
+// The move still to do, or null (no private repo, unknown user, or nothing
+// left to move).
+function pendingMigration() {
+  if (!twoFiles() || !currentUser) return null;
+  const plan = migrationPlan(files.shared.doc, currentUser);
+  return plan.needed ? plan : null;
+}
+
+function describeMigration(plan) {
+  const parts = [];
+  if (plan.wishlist.length) parts.push(`your wishlist (${plan.wishlist.length} place(s))`);
+  if (plan.tagged.length) parts.push(`your tags and notes on ${plan.tagged.length} rated restaurant(s)`);
+  if (plan.colors) parts.push("your tag colours");
+  return parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : parts[0];
+}
+
+function refreshMigrateBox() {
+  const plan = pendingMigration();
+  els.migrateBox.hidden = !plan;
+  if (!plan) return;
+  els.migrateText.textContent =
+    `The shared repo still holds ${describeMigration(plan)}. Move them to your private repo before inviting ` +
+    "friends — afterwards they only see your rated restaurants and your visits. Nothing you see in the app changes." +
+    (plan.foreign ? ` (${plan.foreign} place(s) without visits were added by another GitHub account; they stay shared.)` : "");
+}
+
+// Two saves: the private file first, then the shared file loses only what
+// the private file now holds (files.js migratePrivate/migrateShared), so
+// an interruption can never lose anything — the button just stays.
+async function runMigration() {
+  const plan = pendingMigration();
+  if (!plan) return;
+  if (
+    !confirm(
+      `Move ${describeMigration(plan)} from the shared repo to your private repo?\n\n` +
+        "Friends will then only see your rated restaurants and your visits. Nothing you see in the app changes. " +
+        "It's two saves (private repo first); both can be undone in Settings → History."
+    )
+  ) {
+    return;
+  }
+  els.migrateButton.disabled = true;
+  try {
+    setStatus(els.statusMessage, "Moving to your private repo… (1 of 2)");
+    const fresh = await fetchDataDoc(repoFor("shared"));
+    files.shared = { doc: fresh.doc, sha: fresh.sha };
+    refreshMerged();
+    await writeFile("private", (d) => migratePrivate(d, files.shared.doc, currentUser), {
+      message: "Move my wishlist, tags and notes here",
+    });
+    setStatus(els.statusMessage, "Moving to your private repo… (2 of 2)");
+    await writeFile("shared", (d) => migrateShared(d, files.private.doc, currentUser), {
+      message: "Move my wishlist, tags and notes to my private repo",
+    });
+    refreshList();
+    setStatus(
+      els.statusMessage,
+      pendingMigration()
+        ? "Partly moved — something changed meanwhile. Tap “Move to my private repo” again for the rest."
+        : "Done: your wishlist, tags, notes and tag colours are now in your private repo."
+    );
+  } catch (err) {
+    refreshList();
+    setStatus(els.statusMessage, describeError(err, "Moving stopped (nothing was lost — try again)"), true);
+  } finally {
+    els.migrateButton.disabled = false;
+  }
 }
 
 // Saves name/tags/note from "Edit restaurant": on a shared restaurant (with
@@ -1600,6 +1676,7 @@ function initPickers() {
 
 function initSettingsPanel() {
   document.getElementById("app-version").textContent = `App version: ${APP_VERSION}`;
+  els.migrateButton.addEventListener("click", runMigration);
   const current = getSettings();
   if (current.owner && current.repo) {
     els.dataRepoInput.value = `${current.owner}/${current.repo}`;
